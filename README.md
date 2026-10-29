@@ -4,17 +4,20 @@ RocketEDA UI is a React-based workbench for an AI-native chip-design IDE. It is 
 
 ## Current implementation
 
-The first workbench slice is implemented in [`src/`](./src/):
+The workbench UI is implemented in [`src/`](./src/):
 
-- Dark engineering-focused workbench shell
-- Project and source-file explorer
-- PDK and project context
-- Design canvas preview
-- Assistant prompt and activity feed
-- Verification checks with `PASS`, `RUNNING`, and `UNSUPPORTED` states
-- Registry-driven engine toolbelt
+- Dark, KiCad-inspired workbench shell with a registry-driven engine toolbelt
+- Resizable project explorer, assistant panel, and run console
+- Source-backed project files with an editable code view and save/download actions
+- Hierarchical schematic viewer and KLayout-style layout viewer with layer controls
+- Constraints editor for PDK, domains, numeric targets, required gates, autonomy, and the repair-iteration limit
+- Verification evidence with distinct `PASS`, `FAIL`, `RUNNING`, and `UNSUPPORTED` states
+- Waveforms, optical spectra, and analog/photonic metrics rendered from stored evidence
+- Python/tool terminal sharing the job interface used by the assistant and toolbelt
+- Assistant with approvals, diff preview, tool activity, repair history, and BYOK settings (Meta Models API default)
+- Export of text sources, verification reports, and a project bundle; binary GDS stays in runner storage
 
-The current project, engine, and verification data are local mock state. Backend service interfaces will replace these sources incrementally.
+The project, engine, and verification data are local mock state. Runner jobs are simulated through shared interfaces; backend services can replace these sources incrementally. Unsupported checks are never shown as passes, and the UI does not claim foundry signoff.
 
 ## Getting started
 
@@ -48,18 +51,20 @@ Planned service boundaries:
 - Tool registry
 - Verification and evidence service
 
-## Planned workbench surfaces
+## Workbench surfaces
 
-| Surface | Responsibility | Priority |
+| Surface | Responsibility | Status |
 | --- | --- | --- |
-| Layout editor | Display and progressively edit KLayout-backed geometry | MVP |
-| Schematic editor | Inspect hierarchical connectivity and component instances | MVP |
-| Assistant | Handle design requests, approvals, tool activity, and evidence | MVP |
-| Terminal | Run Python scripts and direct tool jobs | MVP |
-| Plots | Display waveforms, spectra, and simulation metrics | MVP |
-| Project explorer | Browse source, constraints, and artifacts | MVP |
-| Verification panel | Display progress, logs, artifacts, and check status | MVP |
-| 3D layout viewer | Inspect available geometry | Stretch |
+| Layout viewer | Inspect KLayout-backed geometry with layer controls | Implemented as a source-backed viewer |
+| Schematic viewer | Inspect hierarchy, instances, ports, and connectivity | Implemented as a source-backed viewer |
+| Assistant | Handle design requests, approvals, tool activity, and evidence | Implemented with a local harness |
+| Terminal | Run Python scripts and direct tool jobs through the shared runner interface | Implemented (simulated jobs) |
+| Plots | Display waveforms, spectra, simulation metrics, and targets | Implemented from stored evidence |
+| Project explorer | Browse source, constraints, and artifacts | Implemented |
+| Verification panel | Display progress, logs, artifacts, and per-check status | Implemented |
+| Constraints | Edit targets, gates, autonomy, and max iterations | Implemented |
+| Export | Download sources, reports, and a project bundle | Implemented for text state; GDS remains runner-owned |
+| 3D layout viewer | Inspect available geometry | Not implemented |
 
 ## Product boundaries
 
