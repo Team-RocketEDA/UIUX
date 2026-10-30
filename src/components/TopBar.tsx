@@ -1,14 +1,21 @@
 import { project } from "../data";
+import type { AgentMode } from "../agent/useAgent";
 import { Icon } from "./icons";
 
 export function TopBar({
   revision,
   runningJobs,
+  agentMode = "mock",
+  agentConnected = false,
   onExport,
+  onOpenShortcuts,
 }: {
   revision: string;
   runningJobs: number;
+  agentMode?: AgentMode;
+  agentConnected?: boolean;
   onExport: () => void;
+  onOpenShortcuts: () => void;
 }) {
   return (
     <header className="topbar">
@@ -34,15 +41,30 @@ export function TopBar({
           <Icon name="terminal" size={12} />
           Local runner {runningJobs > 0 ? `· ${runningJobs} running` : "ready"}
         </span>
+        {agentMode !== "mock" && (
+          <span className="topbar-chip">
+            <span className={`status-dot ${agentConnected ? "passed" : "unsupported"}`} />
+            Fuel {agentMode.toUpperCase()}
+          </span>
+        )}
       </div>
 
       <div className="topbar-actions">
+        <button
+          className="secondary-button"
+          onClick={onOpenShortcuts}
+          title="Keyboard shortcuts (?)"
+          aria-label="Keyboard shortcuts"
+        >
+          <span className="kbd-badge">?</span>
+          Shortcuts
+        </button>
         <button className="secondary-button" onClick={onExport}>
           <Icon name="export" size={13} />
           Export
         </button>
-        <div className="avatar" title="Signed in as Ayush">
-          AA
+        <div className="avatar" title="Team RocketEDA Workbench">
+          TR
         </div>
       </div>
     </header>

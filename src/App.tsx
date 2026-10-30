@@ -6,6 +6,7 @@ import type {
 import type {
   ActiveView,
   Check,
+  CheckStatus,
   ConstraintSet,
   Job,
   ProjectFile,
@@ -19,6 +20,7 @@ import {
   project,
   toolRegistry,
 } from "./data";
+import { useAgent } from "./agent/useAgent";
 import { buildVerificationReport, downloadText } from "./utils";
 import { ActivityBar } from "./components/ActivityBar";
 import { AssistantPanel, type AssistantTab } from "./components/AssistantPanel";
@@ -107,9 +109,43 @@ export function App() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleHeight, setConsoleHeight] = useState(196);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
 
   const [toast, setToast] = useState<string | null>(null);
   const viewRef = useRef<HTMLDivElement>(null);
+  const agent = useAgent();
+
+  // Map live/replay Rocket Fuel check verdicts onto workbench checks when present.
+  const liveCheckEntries = Object.entries(agent.view.checks);
+  const effectiveChecks: Check[] =
+    agent.mode !== "mock" && liveCheckEntries.length > 0
+      ? liveCheckEntries.map(([id, item]) => {
+          const statusMap: Record<string, CheckStatus> = {
+            PASS: "passed",
+            FAIL: "failed",
+            NOT_RUN: "not_run",
+            UNSUPPORTED: "unsupported",
+          };
+          return {
+            id,
+            name: id.replace(/^opamp\./, "Op-amp ").replace(/_/g, " "),
+            domain: "analog" as const,
+            tool: item.producer === "stub" ? "rocket_fuel (stub)" : "ngspice 44 / Rocket Engine",
+            target: item.target ?? "from constraints.yaml",
+            measured:
+              item.measured !== undefined
+                ? `${item.measured}${id.includes("gain") ? " dB" : id.includes("ugbw") ? " MHz" : id.includes("phase") ? "°" : ""}`
+                : item.status,
+            status: statusMap[item.status] ?? "not_run",
+            artifact: "design/opamp.cir",
+            log: `Producer: ${item.producer ?? "runner"} · margin: ${item.margin ?? "—"}`,
+            revision,
+            updated: "live stream",
+          };
+        })
+      : checks;
+  const effectiveIteration =
+    agent.mode !== "mock" && agent.view.iteration ? agent.view.iteration.used : iteration;
 
   useEffect(() => {
     viewRef.current?.scrollTo({ top: 0 });
@@ -442,6 +478,65 @@ TNS  0.00 ns
     setAssistantTab(tab);
   };
 
+  useEffect(() => {
+    const surfaceOrder: SurfaceId[] = [
+      "overview",
+      "schematic",
+      "layout",
+      "constraints",
+      "verification",
+      "plots",
+      "terminal",
+      "export",
+    ];
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      const target = event.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
+        event.preventDefault();
+        setSidebarOpen((open) => !open);
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
+        event.preventDefault();
+        setConsoleOpen((open) => !open);
+        return;
+      }
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "i") {
+        event.preventDefault();
+        setAssistantOpen((open) => !open);
+        return;
+      }
+      if (event.key === "Escape" && shortcutsOpen) {
+        event.preventDefault();
+        setShortcutsOpen(false);
+        return;
+      }
+      if (isInput || event.metaKey || event.ctrlKey || event.altKey) return;
+
+      if (event.key === "?") {
+        event.preventDefault();
+        setShortcutsOpen((open) => !open);
+        return;
+      }
+      const digit = Number(event.key);
+      if (digit >= 1 && digit <= 8) {
+        event.preventDefault();
+        const nextSurface = surfaceOrder[digit - 1];
+        setSurface(nextSurface);
+        setView({ kind: "surface", id: nextSurface });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [shortcutsOpen]);
+
   const startResize =
     (target: "sidebar" | "assistant" | "console") => (event: ReactPointerEvent) => {
       event.preventDefault();
@@ -497,8 +592,10 @@ TNS  0.00 ns
     };
 
   const activeFile = view.kind === "file" ? files.find((file) => file.path === view.path) : null;
-  const failed = checks.filter((check) => check.status === "failed").length;
-  const unsupported = checks.filter((check) => check.status === "unsupported").length;
+  const failed = effectiveChecks.filter((check) => check.status === "failed").length;
+  const unsupported = effectiveChecks.filter(
+    (check) => check.status === "unsupported" || check.status === "not_run",
+  ).length;
   const runningJobs = jobs.filter((job) => job.status === "running").length;
   const isFill = view.kind === "file" || fillViews.has(surface);
 
@@ -528,9 +625,9 @@ TNS  0.00 ns
       case "overview":
         return (
           <OverviewSurface
-            checks={checks}
+            checks={effectiveChecks}
             constraints={constraints}
-            iteration={iteration}
+            iteration={effectiveIteration}
             tools={toolRegistry}
             onNavigate={navigate}
             onOpenFile={openFile}
@@ -539,14 +636,14 @@ TNS  0.00 ns
           />
         );
       case "schematic":
-        return <SchematicSurface onOpenFile={openFile} />;
+        return <SchematicSurface onOpenFile={openFile} notify={notify} />;
       case "layout":
         return <LayoutSurface onOpenFile={openFile} onRunTool={runTool} />;
       case "constraints":
         return (
           <ConstraintsSurface
             constraints={constraints}
-            checks={checks}
+            checks={effectiveChecks}
             onSave={saveConstraints}
             onOpenFile={openFile}
           />
@@ -554,9 +651,9 @@ TNS  0.00 ns
       case "verification":
         return (
           <VerificationSurface
-            checks={checks}
+            checks={effectiveChecks}
             constraints={constraints}
-            iteration={iteration}
+            iteration={effectiveIteration}
             onRunChecks={runChecks}
             onExportReport={exportReport}
             onOpenFile={openFile}
@@ -595,7 +692,10 @@ TNS  0.00 ns
       <TopBar
         revision={revision}
         runningJobs={runningJobs}
+        agentMode={agent.mode}
+        agentConnected={agent.connected}
         onExport={() => navigate("export")}
+        onOpenShortcuts={() => setShortcutsOpen(true)}
       />
       <Toolbelt
         tools={toolRegistry}
@@ -731,16 +831,67 @@ TNS  0.00 ns
           onClose={() => setAssistantOpen(false)}
           hidden={!assistantOpen}
           constraints={constraints}
-          iteration={iteration}
-          checks={checks}
+          iteration={effectiveIteration}
+          checks={effectiveChecks}
           timingFixed={timingFixed}
           onApplyTimingRepair={applyTimingRepair}
           onRunChecks={runChecks}
           onOpenFile={openFile}
           onNavigate={navigate}
           notify={notify}
+          agent={agent}
         />
       </div>
+
+      {shortcutsOpen && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Keyboard shortcuts"
+          onClick={() => setShortcutsOpen(false)}
+        >
+          <div className="shortcuts-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="shortcuts-header">
+              <div>
+                <span className="eyebrow">KICAD-STYLE WORKBENCH NAVIGATION</span>
+                <h2>Keyboard shortcuts</h2>
+              </div>
+              <button
+                className="icon-button"
+                onClick={() => setShortcutsOpen(false)}
+                aria-label="Close keyboard shortcuts"
+              >
+                <Icon name="close" size={15} />
+              </button>
+            </div>
+            <div className="shortcuts-grid">
+              <div>
+                <span className="eyebrow">SURFACES</span>
+                <div className="shortcut-row"><span>Overview</span><kbd>1</kbd></div>
+                <div className="shortcut-row"><span>Schematic & Symbol Editor</span><kbd>2</kbd></div>
+                <div className="shortcut-row"><span>Layout Viewer (KLayout)</span><kbd>3</kbd></div>
+                <div className="shortcut-row"><span>Constraints (YAML)</span><kbd>4</kbd></div>
+                <div className="shortcut-row"><span>Verification & Evidence</span><kbd>5</kbd></div>
+                <div className="shortcut-row"><span>Waveforms & Spectra</span><kbd>6</kbd></div>
+                <div className="shortcut-row"><span>Python / Tool Terminal</span><kbd>7</kbd></div>
+                <div className="shortcut-row"><span>Deliverables & Export</span><kbd>8</kbd></div>
+              </div>
+              <div>
+                <span className="eyebrow">PANELS & CANVAS</span>
+                <div className="shortcut-row"><span>Toggle Project Explorer</span><kbd>⌘ / Ctrl + B</kbd></div>
+                <div className="shortcut-row"><span>Toggle Run Console</span><kbd>⌘ / Ctrl + J</kbd></div>
+                <div className="shortcut-row"><span>Toggle AI Assistant</span><kbd>⌘ / Ctrl + I</kbd></div>
+                <div className="shortcut-row"><span>Save Active Source File</span><kbd>⌘ / Ctrl + S</kbd></div>
+                <div className="shortcut-row"><span>Send Prompt to Rocket Fuel</span><kbd>⌘ / Ctrl + ↵</kbd></div>
+                <div className="shortcut-row"><span>Pan Schematic / Layout</span><kbd>Drag Canvas</kbd></div>
+                <div className="shortcut-row"><span>Zoom Schematic / Layout</span><kbd>Mouse Wheel</kbd></div>
+                <div className="shortcut-row"><span>Show / Hide This Guide</span><kbd>?</kbd></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {toast && (
         <div className="toast" role="status">
