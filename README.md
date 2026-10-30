@@ -39,6 +39,34 @@ Create a production build:
 npm run build
 ```
 
+## Connecting the assistant to Rocket Fuel
+
+The assistant panel has three modes, picked with `VITE_ROCKET_AGENT`:
+
+| Mode | What drives the panel |
+| --- | --- |
+| unset (default) | the built-in mock, as before (header shows `MOCK`) |
+| `replay` | a recorded real session from [rocket_fuel](https://github.com/Team-RocketEDA/rocket_fuel) `evals/replay_server.py` (header and banner show `REPLAY`; read-only) |
+| `live` | the real agent: opencode with Rocket Fuel's config, through the dev-server proxy at `/agent` |
+
+In live and replay modes the chat, approval cards (file, hypothesis, diff), activity steps, iteration count and
+pass count come from the agent's event stream. Approve and Reject answer the agent's real permission requests.
+
+```bash
+# replay (no model, no key): run from the rocket_fuel repo, then start the UI
+python3 -I evals/replay_server.py evals/recordings/opamp-fix-and-register-free.jsonl --port 4199 --pause-at permission.asked
+VITE_ROCKET_AGENT=replay ROCKET_AGENT_URL=http://127.0.0.1:4199 npm run dev
+
+# live: start the agent from the rocket_fuel repo, then the UI with the same password
+OPENCODE_SERVER_PASSWORD=dev scripts/dev.sh "$(scripts/new-demo.sh)" serve --port 4097
+VITE_ROCKET_AGENT=live OPENCODE_SERVER_PASSWORD=dev npm run dev
+```
+
+The proxy in `vite.config.ts` adds the opencode password on the dev server, so no password or model key reaches
+browser code; Electron main should play the same role. `src/agent/fuel/` is copied from `rocket_fuel/client/src`;
+change it there and copy it back. The live agent works on the Fuel demo project (an op-amp), not on the mock
+project shown in the other surfaces; those still use mock data.
+
 ## Architecture direction
 
 Reusable React components should depend on service interfaces rather than Electron APIs. Native filesystem access, process execution, credentials, and EDA tools belong behind adapters.
