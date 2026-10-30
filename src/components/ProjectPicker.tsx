@@ -52,7 +52,7 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
         <div className="picker-grid">
           <div className="panel picker-panel">
             <div className="panel-heading">
-              <span className="eyebrow">NEW PROJECT</span>
+              <span className="eyebrow">New project</span>
             </div>
             <label className="field">
               <span>Name</span>
@@ -87,7 +87,7 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
 
           <div className="panel picker-panel">
             <div className="panel-heading">
-              <span className="eyebrow">OPEN PROJECT</span>
+              <span className="eyebrow">Open project</span>
               <small>{status?.projectsDir}</small>
             </div>
             {projects.length === 0 ? (

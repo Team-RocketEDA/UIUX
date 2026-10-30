@@ -4,16 +4,14 @@ import type {
   PointerEvent as ReactPointerEvent,
 } from "react";
 import { api, checkRows, type Evidence, type FileEntry, type ProjectSummary, type WorkspaceStatus } from "./api";
-import type { ActiveView, Job, ProjectFile, SurfaceId, ToolDefinition } from "./types";
+import type { ActiveView, Job, ProjectFile, SurfaceId } from "./types";
 import { ActivityBar } from "./components/ActivityBar";
-import { AssistantPanel, type AssistantTab } from "./components/AssistantPanel";
+import { AssistantPanel } from "./components/AssistantPanel";
 import { Icon, type IconName } from "./components/icons";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RunConsole } from "./components/RunConsole";
 import { Sidebar } from "./components/Sidebar";
 import { SourceSurface } from "./components/SourceSurface";
-import { Toolbelt } from "./components/Toolbelt";
-import { TopBar } from "./components/TopBar";
 import { ResizeHandle } from "./components/ui";
 import { ChecksView, ConstraintsView, EmptyView, ExportView, OverviewView, verificationReport } from "./components/WorkspaceViews";
 
@@ -33,35 +31,6 @@ const POLL_MS = 3000;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
-
-// Engine-facing tools: shown as available only when installed AND wired to an engine operation.
-const TOOLS: { id: string; label: string; icon: string; category: ToolDefinition["category"]; operation?: string; detail: string }[] = [
-  { id: "ngspice", label: "ngspice", icon: "nG", category: "Analog", operation: "run_spice", detail: "SPICE simulation through Rocket Engine (Run checks)" },
-  { id: "iverilog", label: "Icarus Verilog", icon: "IV", category: "Digital", detail: "HDL simulation" },
-  { id: "verilator", label: "Verilator", icon: "V", category: "Digital", detail: "HDL simulation and lint" },
-  { id: "yosys", label: "Yosys", icon: "Y", category: "Digital", detail: "Synthesis" },
-  { id: "openroad", label: "OpenROAD", icon: "OR", category: "Digital", detail: "Place and route" },
-  { id: "klayout", label: "KLayout", icon: "K", category: "Layout", detail: "Layout and DRC" },
-  { id: "magic", label: "Magic", icon: "M", category: "Layout", detail: "Layout, DRC and extraction" },
-  { id: "netgen", label: "Netgen", icon: "N", category: "Layout", detail: "LVS" },
-];
-
-function toolDefinitions(status: WorkspaceStatus | null): ToolDefinition[] {
-  return TOOLS.map((tool) => {
-    const installed = !!status?.tools[tool.id];
-    const wired = !!tool.operation && !!status?.engineFound;
-    return {
-      id: tool.id,
-      label: tool.label,
-      detail: tool.detail,
-      category: tool.category,
-      icon: tool.icon,
-      available: installed && wired,
-      unavailableReason: !installed ? "not installed on this machine" : "installed; no engine operation wired for it yet",
-      logs: [],
-    };
-  });
-}
 
 const LANGUAGES: Record<string, string> = { cir: "SPICE", sp: "SPICE", spice: "SPICE", yaml: "YAML", yml: "YAML", py: "Python", v: "Verilog", sv: "SystemVerilog", json: "JSON", md: "Markdown", log: "Log" };
 
@@ -89,10 +58,9 @@ export function App() {
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(244);
+  const [sidebarWidth, setSidebarWidth] = useState(232);
   const [assistantOpen, setAssistantOpen] = useState(true);
-  const [assistantWidth, setAssistantWidth] = useState(356);
-  const [assistantTab, setAssistantTab] = useState<AssistantTab>("chat");
+  const [assistantWidth, setAssistantWidth] = useState(400);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
@@ -258,20 +226,7 @@ export function App() {
     }
   };
 
-  const runTool = (toolId: string) => {
-    const tool = toolDefinitions(status).find((item) => item.id === toolId);
-    if (!tool) return;
-    if (!tool.available) {
-      notify(`${tool.label}: ${tool.unavailableReason}.`);
-      return;
-    }
-    void runChecks();
-  };
-
-  const openAssistant = (tab: AssistantTab = "chat") => {
-    setAssistantOpen(true);
-    setAssistantTab(tab);
-  };
+  const openAssistant = () => setAssistantOpen(true);
 
   const startResize =
     (target: "sidebar" | "assistant" | "console") => (event: ReactPointerEvent) => {
@@ -286,7 +241,7 @@ export function App() {
         if (target === "sidebar") {
           setSidebarWidth(clamp(startSidebar + moveEvent.clientX - startX, 196, 340));
         } else if (target === "assistant") {
-          setAssistantWidth(clamp(startAssistant - (moveEvent.clientX - startX), 300, 520));
+          setAssistantWidth(clamp(startAssistant - (moveEvent.clientX - startX), 320, 640));
         } else {
           setConsoleHeight(clamp(startConsole - (moveEvent.clientY - startY), 120, 420));
         }
@@ -316,7 +271,7 @@ export function App() {
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
         setAssistantWidth((width) =>
-          clamp(width + (event.key === "ArrowLeft" ? step : -step), 300, 520),
+          clamp(width + (event.key === "ArrowLeft" ? step : -step), 320, 640),
         );
       } else {
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -368,7 +323,8 @@ export function App() {
             running={running}
             onNavigate={navigate}
             onRunChecks={() => void runChecks()}
-            onOpenAssistant={() => openAssistant("chat")}
+            onOpenAssistant={openAssistant}
+            tools={status?.tools ?? {}}
           />
         );
       case "constraints":
@@ -386,159 +342,129 @@ export function App() {
 
   return (
     <main className="app-shell">
-      <TopBar
-        projectName={project.name}
-        revision={project.revision}
-        dirty={project.dirty}
-        runningJobs={runningJobs}
-        agentState={project.agent.state}
-        onExport={() => navigate("export")}
-        onSwitchProject={() => void switchProject()}
-      />
-      <Toolbelt
-        tools={toolDefinitions(status)}
-        onRunTool={runTool}
-        onToggleConsole={() => setConsoleOpen((open) => !open)}
-        consoleOpen={consoleOpen}
-        onToggleAssistant={() => setAssistantOpen((open) => !open)}
+      <ActivityBar
+        surface={view.kind === "surface" ? surface : null}
+        onNavigate={navigate}
+        explorerOpen={sidebarOpen}
+        onToggleExplorer={() => setSidebarOpen((open) => !open)}
         assistantOpen={assistantOpen}
+        onToggleAssistant={() => setAssistantOpen((open) => !open)}
+        onSwitchProject={() => void switchProject()}
+        issues={issues}
       />
 
-      <div className="workspace">
-        <ActivityBar
-          surface={surface}
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((open) => !open)}
-          onNavigate={navigate}
-          assistantOpen={assistantOpen}
-          onOpenAssistant={openAssistant}
-        />
-
-        <Sidebar
-          files={files}
-          dirtyFiles={dirtyFiles}
-          openFilePath={view.kind === "file" ? view.path : null}
-          surface={surface}
-          issueCount={issues}
-          onNavigate={navigate}
-          onOpenFile={(path) => void openFile(path)}
-          pdk={project.constraints.pdk ?? "none"}
-          domains={project.constraints.domains ?? []}
-          width={sidebarWidth}
-          hidden={!sidebarOpen}
-        />
-
-        {sidebarOpen && (
+      {sidebarOpen && (
+        <>
+          <Sidebar
+            projectName={project.name}
+            revision={project.revision}
+            files={files}
+            dirtyFiles={dirtyFiles}
+            openFilePath={view.kind === "file" ? view.path : null}
+            onOpenFile={(path) => void openFile(path)}
+            width={sidebarWidth}
+          />
           <ResizeHandle
             orientation="column"
-            label="Resize project sidebar"
+            label="Resize files"
             onPointerDown={startResize("sidebar")}
             onKeyDown={resizeWithKeyboard("sidebar")}
           />
-        )}
+        </>
+      )}
 
-        <section className="content">
-          <div className="tabstrip" role="tablist" aria-label="Open views">
+      <section className="main">
+        <header className="main-head">
+          <div className="tabs" role="tablist" aria-label="Open views">
             <button
-              className={`editor-tab surface-tab ${view.kind === "surface" ? "active" : ""}`}
+              className={`tab ${view.kind === "surface" ? "active" : ""}`}
               role="tab"
               aria-selected={view.kind === "surface"}
               onClick={() => setView({ kind: "surface", id: surface })}
             >
               <Icon name={surfaceMeta[surface].icon} size={13} />
-              <span>{surfaceMeta[surface].label}</span>
+              {surfaceMeta[surface].label}
             </button>
-
             {openFiles.map((path) => {
               const file = files.find((item) => item.path === path);
               const isActive = view.kind === "file" && view.path === path;
               return (
-                <div className={`editor-tab file-tab ${isActive ? "active" : ""}`} key={path}>
-                  <button
-                    className="file-tab-main"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setView({ kind: "file", path })}
-                    title={path}
-                  >
+                <span className={`tab file ${isActive ? "active" : ""}`} key={path}>
+                  <button role="tab" aria-selected={isActive} onClick={() => setView({ kind: "file", path })} title={path}>
                     <Icon name={file?.readOnly ? "lock" : "file"} size={12} />
-                    <span>{path.split("/").pop()}</span>
+                    {path.split("/").pop()}
                     {dirtyFiles.has(path) && <i className="dirty-dot" />}
                   </button>
                   <button
                     className="tab-close"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      closeFile(path);
-                    }}
+                    onClick={() => closeFile(path)}
                     aria-label={`Close ${path}`}
                     title={`Close ${path}`}
                   >
                     <Icon name="close" size={11} />
                   </button>
-                </div>
+                </span>
               );
             })}
-
-            <div className="tabstrip-spacer" />
-            <span className="tabstrip-meta">
-              <span className={`status-dot ${project.dirty ? "running" : "passed"}`} />
-              {project.revision}
-            </span>
           </div>
+          <span className="rev" title="Git revision of the project">
+            <span className={`dot ${project.dirty ? "amber" : "green"}`} />
+            {project.revision || "no commits"}
+          </span>
+          <button className={`ghost-icon ${consoleOpen ? "on" : ""}`} onClick={() => setConsoleOpen((open) => !open)} title="Run console" aria-label="Toggle run console">
+            <Icon name="terminal" size={15} />
+            {runningJobs > 0 && <i className="running-dot" />}
+          </button>
+        </header>
 
-          <div className={`view ${isFill ? "view-fill" : ""}`} ref={viewRef}>
-            {renderSurface()}
-          </div>
+        <div className={`view ${isFill ? "view-fill" : ""}`} ref={viewRef}>
+          {renderSurface()}
+        </div>
 
-          {consoleOpen && (
-            <ResizeHandle
-              orientation="row"
-              label="Resize run console"
-              onPointerDown={startResize("console")}
-              onKeyDown={resizeWithKeyboard("console")}
-            />
-          )}
-          <RunConsole
-            jobs={jobs}
-            activeJobId={activeJobId}
-            open={consoleOpen}
-            height={consoleHeight}
-            onSelectJob={setActiveJobId}
-            onClear={() => {
-              setJobs([]);
-              setActiveJobId(null);
-            }}
-            onToggle={() => setConsoleOpen((open) => !open)}
+        {consoleOpen && (
+          <ResizeHandle
+            orientation="row"
+            label="Resize run console"
+            onPointerDown={startResize("console")}
+            onKeyDown={resizeWithKeyboard("console")}
           />
-        </section>
+        )}
+        <RunConsole
+          jobs={jobs}
+          activeJobId={activeJobId}
+          open={consoleOpen}
+          height={consoleHeight}
+          onSelectJob={setActiveJobId}
+          onClear={() => {
+            setJobs([]);
+            setActiveJobId(null);
+          }}
+          onToggle={() => setConsoleOpen((open) => !open)}
+        />
+      </section>
 
-        {assistantOpen && (
+      {assistantOpen && (
+        <>
           <ResizeHandle
             orientation="column"
-            label="Resize assistant panel"
+            label="Resize assistant"
             onPointerDown={startResize("assistant")}
             onKeyDown={resizeWithKeyboard("assistant")}
           />
-        )}
-
-        <AssistantPanel
-          key={project.name}
-          width={assistantWidth}
-          tab={assistantTab}
-          onTabChange={setAssistantTab}
-          onClose={() => setAssistantOpen(false)}
-          hidden={!assistantOpen}
-          constraints={project.constraints}
-          agentState={project.agent.state}
-          onOpenFile={(path) => void openFile(path)}
-          onNavigate={navigate}
-        />
-      </div>
+          <AssistantPanel
+            key={project.name}
+            width={assistantWidth}
+            onClose={() => setAssistantOpen(false)}
+            constraints={project.constraints}
+            agentState={project.agent.state}
+            onOpenFile={(path) => void openFile(path)}
+            onNavigate={navigate}
+          />
+        </>
+      )}
 
       {toast && (
         <div className="toast" role="status">
-          <Icon name="check" size={14} />
           {toast}
         </div>
       )}

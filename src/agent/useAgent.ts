@@ -53,7 +53,23 @@ export function useAgent(): Agent {
           if (!controller.signal.aborted) retry = window.setTimeout(connect, 3000);
         });
     };
-    connect();
+    // Pick the project's latest conversation back up (page reload, reopening the project), then stream.
+    const restore = async () => {
+      if (mode !== "live") return;
+      try {
+        const sessionId = await client.latestSession();
+        if (!sessionId || controller.signal.aborted) return;
+        const events = await client.history(sessionId);
+        if (controller.signal.aborted) return;
+        sessionRef.current = sessionId;
+        setView(events.reduce(reduce, emptyView(sessionId)));
+      } catch {
+        // Agent still starting; the stream below retries.
+      }
+    };
+    void restore().finally(() => {
+      if (!controller.signal.aborted) connect();
+    });
     return () => {
       controller.abort();
       window.clearTimeout(retry);

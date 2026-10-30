@@ -40,7 +40,8 @@ export function OverviewView({
   onOpenAssistant,
   onRunChecks,
   running,
-}: Common & { onNavigate: (s: SurfaceId) => void; onOpenAssistant: () => void; onRunChecks: () => void; running: boolean }) {
+  tools,
+}: Common & { onNavigate: (s: SurfaceId) => void; onOpenAssistant: () => void; onRunChecks: () => void; running: boolean; tools: Record<string, boolean> }) {
   const rows = checkRows(project.constraints, evidence, project.revision);
   const passing = rows.filter((r) => r.status === "PASS" && !r.stale).length;
   const failing = rows.filter((r) => r.status === "FAIL").length;
@@ -50,7 +51,7 @@ export function OverviewView({
   return (
     <div className="page-surface">
       <SurfaceHeader
-        eyebrow={`PROJECT · ${project.name.toUpperCase()}`}
+        eyebrow={`Project · ${project.name}`}
         title={project.constraints.title ?? project.name}
         subtitle={project.constraints.description}
         actions={
@@ -68,26 +69,26 @@ export function OverviewView({
       />
       <div className="stat-grid">
         <div>
-          <span className="eyebrow">DESIGN STATUS</span>
+          <span className="eyebrow">Design status</span>
           <b className={failing ? "failed" : passing === rows.length && rows.length ? "passed" : ""}>{verdict}</b>
         </div>
         <div>
-          <span className="eyebrow">CHECKS PASSING</span>
+          <span className="eyebrow">Checks passing</span>
           <b>{passing} / {rows.length}</b>
         </div>
         <div>
-          <span className="eyebrow">REVISION</span>
+          <span className="eyebrow">Revision</span>
           <b>{project.revision || "—"}{project.dirty ? " +changes" : ""}</b>
         </div>
         <div>
-          <span className="eyebrow">LAST RUN</span>
+          <span className="eyebrow">Last run</span>
           <b>{latest ? timeAgo(latest.finished_at) : "never"}</b>
         </div>
       </div>
 
       <div className="panel">
         <div className="panel-heading">
-          <span className="eyebrow">CHECKS</span>
+          <span className="eyebrow">Checks</span>
           <button className="text-button" onClick={() => onNavigate("verification")}>
             All evidence <Icon name="chevronRight" size={12} />
           </button>
@@ -97,7 +98,21 @@ export function OverviewView({
 
       <div className="panel">
         <div className="panel-heading">
-          <span className="eyebrow">AGENT</span>
+          <span className="eyebrow">Tools on this machine</span>
+        </div>
+        <div className="tool-chips">
+          {Object.entries(tools).map(([tool, found]) => (
+            <span key={tool} className={`tool-chip ${found ? "found" : ""}`} title={found ? (tool === "ngspice" ? "Installed and wired to the engine (run_spice)" : "Installed; no engine operation wired yet") : "Not installed"}>
+              {tool}
+              {found && tool !== "ngspice" ? " · not wired" : ""}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="panel">
+        <div className="panel-heading">
+          <span className="eyebrow">Agent</span>
         </div>
         <p className="panel-copy">
           {project.agent.state === "ready" && "The assistant is running on this project. Describe what you want; it edits design files, runs the checks on the engine, and asks before changes."}
@@ -152,7 +167,7 @@ export function ConstraintsView({ project, onOpenFile }: { project: ProjectSumma
   return (
     <div className="page-surface">
       <SurfaceHeader
-        eyebrow="CONSTRAINTS"
+        eyebrow="Constraints"
         title="Targets and checks"
         subtitle="Read from constraints.yaml. The engine takes targets and measurement formulas from here; the agent cannot change them without your approval."
         actions={
@@ -168,21 +183,21 @@ export function ConstraintsView({ project, onOpenFile }: { project: ProjectSumma
           <b>{c.pdk ?? "—"}</b>
         </div>
         <div>
-          <span className="eyebrow">REPAIR LIMIT</span>
+          <span className="eyebrow">Repair limit</span>
           <b>{c.agent?.iteration_limit ?? "—"} iterations</b>
         </div>
         <div>
-          <span className="eyebrow">AUTONOMY</span>
+          <span className="eyebrow">Autonomy</span>
           <b>{c.agent?.mode === "auto" ? "Automatic" : "Approval"}</b>
         </div>
         <div>
-          <span className="eyebrow">SIMULATION</span>
+          <span className="eyebrow">Simulation</span>
           <b>{c.simulation?.operation ?? "none"}</b>
         </div>
       </div>
       <div className="panel">
         <div className="panel-heading">
-          <span className="eyebrow">CHECKS</span>
+          <span className="eyebrow">Checks</span>
         </div>
         {(c.checks ?? []).length === 0 ? (
           <p className="panel-copy">No checks defined yet.</p>
@@ -215,7 +230,7 @@ export function ConstraintsView({ project, onOpenFile }: { project: ProjectSumma
       {c.simulation && (
         <div className="panel">
           <div className="panel-heading">
-            <span className="eyebrow">WHAT RUN CHECKS SIMULATES</span>
+            <span className="eyebrow">What Run checks simulates</span>
           </div>
           <p className="panel-copy mono">
             {(c.simulation.sources ?? []).join(", ")} · {(c.simulation.analyses ?? []).join(" ; ")}
@@ -237,7 +252,7 @@ export function ChecksView({
   return (
     <div className="page-surface">
       <SurfaceHeader
-        eyebrow="VERIFICATION"
+        eyebrow="Verification"
         title="Evidence"
         subtitle="Every status comes from a real engine run recorded in results/engine-runs, by you or the assistant. Runs on an older revision are marked stale."
         actions={
@@ -255,13 +270,13 @@ export function ChecksView({
       />
       <div className="panel">
         <div className="panel-heading">
-          <span className="eyebrow">CHECKS AT {project.revision || "—"}</span>
+          <span className="eyebrow">Checks at {project.revision || "—"}</span>
         </div>
         <ChecksTable rows={rows} detailed />
       </div>
       <div className="panel">
         <div className="panel-heading">
-          <span className="eyebrow">RUN HISTORY</span>
+          <span className="eyebrow">Run history</span>
         </div>
         {evidence.length === 0 ? (
           <p className="panel-copy">No runs yet. Run the checks, or ask the assistant to.</p>
@@ -304,10 +319,10 @@ export function ChecksView({
 export function ExportView({ project, evidence, onExportReport }: Common & { onExportReport: () => void }) {
   return (
     <div className="page-surface">
-      <SurfaceHeader eyebrow="EXPORT" title="Export" subtitle="Download the project and its evidence. Generated output is not a foundry-approved tapeout." />
+      <SurfaceHeader eyebrow="Export" title="Export" subtitle="Download the project and its evidence. Generated output is not a foundry-approved tapeout." />
       <div className="panel">
         <div className="panel-heading">
-          <span className="eyebrow">PROJECT ARCHIVE</span>
+          <span className="eyebrow">Project archive</span>
         </div>
         <p className="panel-copy">
           All project files at {project.revision || "the current revision"}, including results/ evidence ({evidence.length} run
@@ -320,7 +335,7 @@ export function ExportView({ project, evidence, onExportReport }: Common & { onE
       </div>
       <div className="panel">
         <div className="panel-heading">
-          <span className="eyebrow">VERIFICATION REPORT</span>
+          <span className="eyebrow">Verification report</span>
         </div>
         <p className="panel-copy">Markdown report of every check with its real status, measured value and the revision it ran on.</p>
         <button className="secondary-button" onClick={onExportReport} disabled={!evidence.length}>

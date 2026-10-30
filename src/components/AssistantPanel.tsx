@@ -1,46 +1,31 @@
 import { useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { Constraints } from "../api";
 import type { ToolStep } from "../agent/fuel";
 import { useAgent } from "../agent/useAgent";
 import type { SurfaceId } from "../types";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 
-export type AssistantTab = "chat" | "activity" | "settings";
+const shortPath = (value: string) =>
+  value.replace(/^.*?\/((?:design|tests|ip|workflows|results)\/.*|[^/]+\.(?:yaml|yml|md|json))$/, "$1");
 
-type StepStatus = "completed" | "failed" | "running" | "pending";
-
-const stepLabel: Record<StepStatus, string> = {
-  completed: "DONE",
-  failed: "FAILED",
-  running: "RUNNING",
-  pending: "PENDING",
-};
-
-const formatTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-
-const shortPath = (value: string) => value.replace(/^.*?\/(design|tests|ip|workflows|results)\//, "$1/");
-
-// One line describing a tool call: what it touched, and for simulations what the engine measured.
+// One quiet line per tool call: what it touched, and for simulations what the engine measured.
 function stepDetail(step: ToolStep): string {
   const input = step.input as Record<string, unknown>;
-  const target = [input.filePath, input.file, input.kind, input.query, input.revision_id, input.block_id, input.run_id]
+  const target = [input.filePath, input.file, input.query, input.revision_id, input.block_id]
     .filter((value): value is string => typeof value === "string")
     .map(shortPath)
     .join(" · ");
-  if (step.error) return `${target ? target + " · " : ""}${step.error}`;
+  if (step.error) return step.error.split("\n")[0];
   if (step.output && (step.tool === "engine_get_job_status" || step.tool === "rocket_run_job")) {
     try {
       const result = JSON.parse(step.output);
       const verdict = result.verdict ?? result;
       if (verdict.measurements) {
-        return verdict.measurements.map((m: { name: string; value: number; status: string }) => `${m.name} ${m.value.toFixed(2)} ${m.status}`).join(" · ");
+        return `${verdict.status} · ` + verdict.measurements.map((m: { name: string; value: number }) => `${m.name} ${m.value.toFixed(2)}`).join(", ");
       }
-      if (result.checks) {
-        return Object.entries(result.checks as Record<string, { status: string; measured?: number }>)
-          .map(([id, c]) => `${id.split(".").pop()} ${c.measured ?? ""} ${c.status}`)
-          .join(" · ");
-      }
-      if (verdict.status) return `${verdict.status}${verdict.reason ? `: ${verdict.reason}` : ""}`;
+      if (verdict.status) return `${verdict.status}${verdict.reason ? ` · ${verdict.reason}` : ""}`;
     } catch {
       return target;
     }
@@ -53,28 +38,41 @@ function diffLines(diff: string) {
     .split("\n")
     .filter((line) => !/^(Index:|={5,}|--- |\+\+\+ )/.test(line))
     .map((line, index) => (
-      <span key={index} className={line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : ""}>
+      <span key={index} className={line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : line.startsWith("@@") ? "diff-hunk" : ""}>
         {line || " "}
       </span>
     ));
 }
 
+type Suggestion = { icon: IconName; text: string };
+
+function suggestions(constraints: Constraints): Suggestion[] {
+  if ((constraints.checks ?? []).length === 0) {
+    return [
+      { icon: "sparkles", text: "Design a two-stage op-amp with gain, bandwidth and phase-margin checks" },
+      { icon: "sliders", text: "Propose measurable constraints for what I want to build" },
+      { icon: "layers", text: "Look for reusable IP before designing from scratch" },
+      { icon: "bulb", text: "Explain how a design moves from netlist to verified block here" },
+    ];
+  }
+  return [
+    { icon: "sparkles", text: "Bring the design to spec" },
+    { icon: "warning", text: "Explain which check fails and why" },
+    { icon: "sliders", text: "Improve the margins without breaking other checks" },
+    { icon: "layers", text: "Register this design as a reusable block" },
+  ];
+}
+
 export function AssistantPanel({
   width,
-  tab,
-  onTabChange,
   onClose,
-  hidden,
   constraints,
   agentState,
   onOpenFile,
   onNavigate,
 }: {
   width: number;
-  tab: AssistantTab;
-  onTabChange: (tab: AssistantTab) => void;
   onClose: () => void;
-  hidden: boolean;
   constraints: Constraints;
   agentState: string;
   onOpenFile: (path: string) => void;
@@ -84,319 +82,196 @@ export function AssistantPanel({
   const { view } = agent;
   const replay = agent.mode === "replay";
   const [input, setInput] = useState("");
-  const chatRef = useRef<HTMLDivElement>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
 
   const approvals = view.approvals.filter((approval) => approval.status === "pending");
   const busy = view.status === "busy";
   const limit = view.iteration?.limit ?? constraints.agent?.iteration_limit ?? 3;
   const used = view.iteration?.used ?? 0;
-  const autonomy = constraints.agent?.mode === "auto" ? "auto" : "approval";
+  const autonomy = constraints.agent?.mode === "auto" ? "Auto" : "Approval";
   const ready = replay || agentState === "ready";
+  const live = replay || (agent.connected && ready);
   const error = agent.error ?? view.error;
-  const steps = view.steps.slice().reverse();
-  const quickPrompts = replay
-    ? []
-    : (constraints.checks ?? []).length
-      ? ["Bring the design to spec", "Explain the failing check", "Register it as a reusable block"]
-      : ["Propose a design and its checks for this project"];
+  const model = (view.model ?? view.replay?.model ?? "").replace(/^opencode\//, "");
+
+  // Messages and tool calls in the order they happened.
+  const timeline = [
+    ...view.messages.map((message) => ({ kind: "message" as const, time: message.time, message })),
+    ...view.steps.map((step) => ({ kind: "step" as const, time: step.time, step })),
+  ].sort((a, b) => a.time - b.time);
 
   useEffect(() => {
-    const element = chatRef.current;
+    const element = bodyRef.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [view, tab]);
+  }, [view]);
 
   const send = (raw: string) => {
     const text = raw.trim();
     if (!text || busy || replay || !ready) return;
     setInput("");
-    void agent.send(text, autonomy === "auto" ? "auto" : "approval");
+    void agent.send(text, autonomy === "Auto" ? "auto" : "approval");
   };
 
   return (
-    <aside className="assistant-panel" style={{ width }} hidden={hidden}>
-      <header className="assistant-header">
-        <div className="assistant-title">
-          <span className="assistant-mark">
-            <Icon name="sparkles" size={15} />
-          </span>
-          <div>
-            <b>Rocket assistant</b>
-            <span>Rocket Fuel · {view.model ?? view.replay?.model ?? "model chosen by the agent"}</span>
-          </div>
-        </div>
-        <div className="assistant-header-actions">
-          {replay ? (
-            <span className="live-pill replay">
-              <i />
-              REPLAY
-            </span>
-          ) : (
-            <span className={`live-pill ${agent.connected && ready ? "" : "offline"}`}>
-              <i />
-              {agent.connected && ready ? "LIVE" : agentState === "starting" ? "STARTING" : "OFFLINE"}
-            </span>
-          )}
-          <button className="icon-button" onClick={onClose} title="Close assistant" aria-label="Close assistant">
-            <Icon name="close" size={15} />
+    <aside className="assistant" style={{ width }} aria-label="Assistant">
+      <header className="assistant-head">
+        <b>Assistant</b>
+        <span
+          className={`conn-dot ${live ? "on" : agentState === "starting" ? "wait" : ""}`}
+          title={replay ? "Replay of a recorded session" : live ? "Connected" : agentState === "starting" ? "Starting" : "Not connected"}
+        />
+        {replay && <span className="replay-tag">REPLAY</span>}
+        <div className="head-spacer" />
+        <div className="menu-anchor">
+          <button className="ghost-icon" onClick={() => setMenuOpen((open) => !open)} aria-label="Assistant settings" aria-expanded={menuOpen}>
+            <Icon name="more" size={16} />
           </button>
+          {menuOpen && (
+            <div className="menu" role="menu">
+              <div className="menu-row"><span>Model</span><b>{model || "after first message"}</b></div>
+              <div className="menu-row"><span>Profile</span><b>{view.agent ?? (autonomy === "Auto" ? "rocket-auto" : "rocket-approval")}</b></div>
+              <div className="menu-row"><span>Repair limit</span><b>{limit} iterations</b></div>
+              <button className="menu-item" onClick={() => { setMenuOpen(false); onOpenFile("constraints.yaml"); }}>
+                Edit autonomy and limits
+              </button>
+              <button className="menu-item" onClick={() => { setMenuOpen(false); onNavigate("verification"); }}>
+                Open verification evidence
+              </button>
+              <p className="menu-note">The model and its key are set where the agent runs (rocket_fuel/.env), never in this page.</p>
+            </div>
+          )}
         </div>
+        <button className="ghost-icon" onClick={onClose} aria-label="Close assistant">
+          <Icon name="close" size={15} />
+        </button>
       </header>
 
-      <div className="assistant-tabs" role="tablist" aria-label="Assistant views">
-        {(
-          [
-            ["chat", "Chat"],
-            ["activity", "Activity"],
-            ["settings", "Settings"],
-          ] as [AssistantTab, string][]
-        ).map(([id, label]) => (
-          <button
-            key={id}
-            role="tab"
-            aria-selected={tab === id}
-            className={`assistant-tab ${tab === id ? "active" : ""}`}
-            onClick={() => onTabChange(id)}
-          >
-            {label}
-            {id === "activity" && approvals.length > 0 && <span className="tab-dot" />}
-          </button>
-        ))}
-      </div>
-
-      {tab === "chat" && (
-        <>
-          <div className="assistant-chat" ref={chatRef}>
-            {replay && (
-              <div className="replay-banner">
-                <b>REPLAY</b> of a recorded session
-                {view.replay?.recordedAt && ` · ${new Date(view.replay.recordedAt).toLocaleString()}`}
-                {view.replay?.model && ` · ${view.replay.model}`}. Nothing here is running now.
-              </div>
-            )}
-            {error && <div className="agent-error">{error}</div>}
-            {!replay && agentState === "error" && <div className="agent-error">The assistant failed to start for this project.</div>}
-            {view.messages.length === 0 && !replay && (
-              <p className="agent-empty">
-                {ready
-                  ? "Describe what you want designed or fixed. The assistant edits files in design/ and tests/, runs the checks on the engine, and asks before changes."
-                  : "Starting the assistant for this project…"}
-              </p>
-            )}
-            {view.messages.map((message) => (
-              <div className={`assistant-message ${message.role}`} key={message.id}>
-                {message.role === "agent" && (
-                  <span className="assistant-avatar">
-                    <Icon name="sparkles" size={12} />
-                  </span>
-                )}
-                <div className="message-body">
-                  <div className="message-meta">
-                    <b>{message.role === "agent" ? "Rocket" : "You"}</b>
-                    <span>{formatTime(message.time)}</span>
-                  </div>
-                  <p>{message.text}</p>
-                </div>
-              </div>
-            ))}
-
-            {busy && (
-              <div className="assistant-message agent">
-                <span className="assistant-avatar">
-                  <Icon name="sparkles" size={12} />
-                </span>
-                <div className="message-body">
-                  <div className="typing-indicator">
-                    <span />
-                    <span />
-                    <span />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {approvals.map((approval) => (
-              <div className="approval-card" key={approval.id}>
-                <div className="approval-heading">
-                  <span className="approval-title">
-                    <Icon name="warning" size={14} />
-                    Approval required: {approval.label}
-                  </span>
-                  <span className="approval-tool">{approval.permission}</span>
-                </div>
-                {approval.files.map((file) => (
-                  <button className="approval-path" key={file} onClick={() => onOpenFile(shortPath(file))}>
-                    <Icon name="file" size={12} />
-                    {shortPath(file)}
-                  </button>
-                ))}
-                {approval.hypothesis && <p className="approval-desc">{approval.hypothesis}</p>}
-                {approval.note && <p className="approval-desc">{approval.note}</p>}
-                {approval.diff && <pre className="diff-block">{diffLines(approval.diff)}</pre>}
-                <div className="approval-actions">
-                  <button className="secondary-button" onClick={() => void agent.reject(approval.id)} disabled={replay}>
-                    Reject
-                  </button>
-                  <button className="primary-button" onClick={() => void agent.approve(approval.id)} disabled={replay}>
-                    <Icon name="check" size={13} />
-                    Approve
-                  </button>
-                </div>
-                <small className="approval-note">The assistant waits for your answer. Rejecting changes nothing.</small>
-              </div>
-            ))}
+      <div className="assistant-body" ref={bodyRef}>
+        {replay && (
+          <div className="notice warn">
+            Replay of a recorded session{view.replay?.recordedAt ? ` from ${new Date(view.replay.recordedAt).toLocaleString()}` : ""}. Nothing here is running now.
           </div>
+        )}
+        {error && <div className="notice error">{error}</div>}
+        {!replay && agentState === "error" && <div className="notice error">The assistant failed to start for this project.</div>}
 
-          <div className="assistant-composer">
-            <div className="quick-prompts">
-              {quickPrompts.map((prompt) => (
-                <button key={prompt} onClick={() => send(prompt)} disabled={busy || !ready}>
-                  {prompt}
+        {timeline.length === 0 && !replay ? (
+          <div className="assistant-empty">
+            <h2>{(constraints.checks ?? []).length ? "Design, check, or fix this project" : "What do you want to build?"}</h2>
+            <div className="suggestion-grid">
+              {suggestions(constraints).map((item) => (
+                <button key={item.text} className="suggestion" onClick={() => send(item.text)} disabled={!ready || busy}>
+                  <span className="suggestion-icon">
+                    <Icon name={item.icon} size={14} />
+                  </span>
+                  <span className="suggestion-text">{item.text}</span>
+                  <Icon name="chevronRight" size={13} />
                 </button>
               ))}
             </div>
-            <div className="composer-box">
-              <textarea
-                value={input}
-                onChange={(event) => setInput(event.target.value)}
-                onKeyDown={(event) => {
-                  if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                    event.preventDefault();
-                    send(input);
-                  }
-                }}
-                rows={2}
-                disabled={replay || !ready}
-                placeholder={replay ? "Replay is read-only" : ready ? "Describe a design change or ask for evidence…" : "Waiting for the assistant…"}
-                aria-label="Message the assistant"
-              />
-              <div className="composer-actions">
-                <span className={`composer-context ${view.iteration?.limitReached ? "limit" : ""}`}>
-                  {used}/{limit} iterations · {autonomy}
-                </span>
-                {busy && !replay ? (
-                  <button className="secondary-button" onClick={() => void agent.stop()}>
-                    Stop
-                  </button>
+            {!ready && <p className="assistant-hint">Starting the assistant for this project…</p>}
+          </div>
+        ) : (
+          <div className="timeline">
+            {timeline.map((item) =>
+              item.kind === "message" ? (
+                item.message.role === "user" ? (
+                  <div className="msg user" key={item.message.id}>
+                    {item.message.text}
+                  </div>
                 ) : (
-                  <button className="primary-button" onClick={() => send(input)} disabled={replay || !ready || !input.trim()}>
-                    Send
-                    <Icon name="chevronRight" size={13} />
-                  </button>
-                )}
-              </div>
-            </div>
-            <small className="composer-note">⌘ / Ctrl + Enter to send · design edits ask for approval</small>
-          </div>
-        </>
-      )}
-
-      {tab === "activity" && (
-        <div className="assistant-scroll">
-          <div className="activity-summary">
-            <div>
-              <span className="eyebrow">ITERATION</span>
-              <b>
-                {used}/{limit}
-              </b>
-            </div>
-            <div>
-              <span className="eyebrow">PENDING</span>
-              <b className={approvals.length ? "pending" : ""}>{approvals.length}</b>
-            </div>
-            <div>
-              <span className="eyebrow">TOOL CALLS</span>
-              <b>{view.steps.length}</b>
-            </div>
-          </div>
-
-          {approvals.length > 0 && (
-            <div className="approval-banner">
-              <Icon name="warning" size={15} />
-              <div>
-                <b>{approvals.length === 1 ? "Change waiting for approval" : `${approvals.length} changes waiting for approval`}</b>
-                <span>{approvals.map((approval) => approval.label).join(" · ")}</span>
-              </div>
-              <button className="secondary-button" onClick={() => onTabChange("chat")}>
-                Review
-              </button>
-            </div>
-          )}
-
-          {steps.length === 0 && <p className="agent-empty">No tool calls yet in this session.</p>}
-          <div className="step-list">
-            {steps.map((step) => {
-              const status: StepStatus = step.status === "error" ? "failed" : step.status;
-              return (
-                <div className={`step-row ${status}`} key={step.id}>
-                  <span className={`step-icon ${status}`}>
-                    {status === "completed" ? (
+                  <div className="msg agent markdown" key={item.message.id}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.message.text}</ReactMarkdown>
+                  </div>
+                )
+              ) : (
+                <div className={`step ${item.step.status}`} key={item.step.id}>
+                  <span className="step-mark">
+                    {item.step.status === "completed" ? (
                       <Icon name="check" size={11} />
-                    ) : status === "failed" ? (
+                    ) : item.step.status === "error" ? (
                       <Icon name="x" size={11} />
-                    ) : status === "pending" ? (
-                      <Icon name="clock" size={11} />
                     ) : (
                       <span className="spinner" />
                     )}
                   </span>
-                  <div className="step-copy">
-                    <b>{step.label}</b>
-                    <span>{stepDetail(step)}</span>
-                    <small>
-                      {step.tool} · {formatTime(step.time)}
-                    </small>
-                  </div>
-                  <span className={`step-state ${status}`}>{stepLabel[status]}</span>
+                  <span className="step-label">{item.step.label}</span>
+                  <span className="step-detail">{stepDetail(item.step)}</span>
                 </div>
-              );
-            })}
+              ),
+            )}
+            {busy && (
+              <div className="typing" aria-label="Working">
+                <span />
+                <span />
+                <span />
+              </div>
+            )}
           </div>
+        )}
 
-          <div className="activity-footer">
-            <button className="secondary-button" onClick={() => onNavigate("verification")}>
-              <Icon name="verification" size={13} />
-              Open verification evidence
-            </button>
+        {approvals.map((approval) => (
+          <div className="approval" key={approval.id}>
+            <div className="approval-top">
+              <Icon name="warning" size={14} />
+              <b>{approval.label}</b>
+              <span>needs your approval</span>
+            </div>
+            {approval.files.map((file) => (
+              <button className="approval-file" key={file} onClick={() => onOpenFile(shortPath(file))}>
+                <Icon name="file" size={12} />
+                {shortPath(file)}
+              </button>
+            ))}
+            {approval.hypothesis && <p className="approval-why">{approval.hypothesis}</p>}
+            {approval.note && <p className="approval-why">{approval.note}</p>}
+            {approval.diff && <pre className="diff">{diffLines(approval.diff)}</pre>}
+            <div className="approval-actions">
+              <button className="btn" onClick={() => void agent.reject(approval.id)} disabled={replay}>
+                Reject
+              </button>
+              <button className="btn primary" onClick={() => void agent.approve(approval.id)} disabled={replay}>
+                Approve
+              </button>
+            </div>
           </div>
-        </div>
-      )}
+        ))}
+      </div>
 
-      {tab === "settings" && (
-        <div className="assistant-scroll settings-scroll">
-          <div className="settings-heading">
-            <div>
-              <span className="eyebrow">AGENT</span>
-              <h3>Rocket Fuel</h3>
-            </div>
-          </div>
-          <div className="settings-block">
-            <div className="settings-row">
-              <span>Model in use</span>
-              <b>{view.model ?? "shown after the first message"}</b>
-            </div>
-            <div className="settings-row">
-              <span>Agent profile</span>
-              <b>{view.agent ?? (autonomy === "auto" ? "rocket-auto" : "rocket-approval")}</b>
-            </div>
-            <div className="settings-row">
-              <span>Autonomy</span>
-              <b>{autonomy === "auto" ? "Automatic" : "Approval at changes"}</b>
-            </div>
-            <div className="settings-row">
-              <span>Repair limit</span>
-              <b>{limit} iterations</b>
-            </div>
-            <button className="text-button" onClick={() => onOpenFile("constraints.yaml")}>
-              Edit autonomy and limits in constraints.yaml
-              <Icon name="chevronRight" size={12} />
+      <footer className="composer">
+        <textarea
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey) {
+              event.preventDefault();
+              send(input);
+            }
+          }}
+          rows={2}
+          disabled={replay || !ready}
+          placeholder={replay ? "Replay is read-only" : ready ? "Ask the assistant to design, check, or fix…" : "Waiting for the assistant…"}
+          aria-label="Message the assistant"
+        />
+        <div className="composer-row">
+          {model && <span className="pill">{model}</span>}
+          <span className="pill" title="Set in constraints.yaml">{autonomy}</span>
+          <span className={`composer-meta ${view.iteration?.limitReached ? "limit" : ""}`}>
+            {used}/{limit} repairs
+          </span>
+          <div className="head-spacer" />
+          {busy && !replay ? (
+            <button className="send stop" onClick={() => void agent.stop()} aria-label="Stop">
+              <Icon name="stop" size={14} />
             </button>
-          </div>
-          <p className="settings-note">
-            The model and its key are configured where the agent runs, never in this page: ROCKET_MODEL and MODEL_API_KEY in
-            rocket_fuel/.env today, the OS keychain in the desktop app. Default: Meta Muse Spark 1.3.
-          </p>
+          ) : (
+            <button className="send" onClick={() => send(input)} disabled={replay || !ready || !input.trim()} aria-label="Send">
+              <Icon name="arrowUp" size={15} />
+            </button>
+          )}
         </div>
-      )}
+      </footer>
     </aside>
   );
 }

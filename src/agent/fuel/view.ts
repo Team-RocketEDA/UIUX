@@ -99,6 +99,12 @@ const LABELS: Record<string, string> = {
   rocket_ip_search: "Search IP library",
   rocket_ip_get: "Read IP block",
   rocket_ip_register: "Register IP block",
+  engine_run_spice: "Run simulation",
+  engine_get_job_status: "Read result",
+  engine_get_check_results: "Read check results",
+  engine_get_logs: "Search logs",
+  engine_list_job_kinds: "List job kinds",
+  engine_get_project_snapshot: "Read project state",
 }
 
 export function toolLabel(tool: string): string {
@@ -262,10 +268,15 @@ export function reduce(view: SessionView, event: OpencodeEvent, time = Date.now(
       return { ...view, status: view.status === "error" ? "error" : "idle" }
     case "session.error":
       return { ...view, status: "error", error: props.error?.data?.message ?? props.error?.name ?? "Agent error" }
-    case "message.updated":
-      return props.info?.id ? { ...view, roles: { ...view.roles, [props.info.id]: props.info.role } } : view
+    case "message.updated": {
+      if (!props.info?.id) return view
+      // Assistant messages carry the model that wrote them, which also covers restored history.
+      const model = props.info.providerID && props.info.modelID ? `${props.info.providerID}/${props.info.modelID}` : view.model
+      return { ...view, model, agent: props.info.agent ?? view.agent, roles: { ...view.roles, [props.info.id]: props.info.role } }
+    }
     case "message.part.updated":
-      return props.part ? applyPart(view, props.part, time) : view
+      // Prefer the part's own timestamp, so restored history keeps messages and tool calls in order.
+      return props.part ? applyPart(view, props.part, props.part.time?.start ?? props.time ?? time) : view
     case "message.part.delta": {
       if (view.partKinds[props.partID] !== "text" || props.field !== "text") return view
       const message = view.messages.find((m) => m.id === props.partID)

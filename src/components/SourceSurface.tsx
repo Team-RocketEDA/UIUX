@@ -30,7 +30,7 @@ export function SourceSurface({
   return (
     <div className="fill-surface source-surface">
       <SurfaceHeader
-        eyebrow={`SOURCE / ${file.kind.toUpperCase()}`}
+        eyebrow={file.kind === "result" ? "Engine evidence" : "Source file"}
         title={file.path.split("/").pop() ?? file.path}
         subtitle={file.path}
         actions={

@@ -66,7 +66,7 @@ export function RunConsole({
             {jobs.length === 0 ? (
               <div className="console-empty">
                 <Icon name="play" size={16} />
-                <span>Run a tool from the toolbelt, terminal, or verification surface.</span>
+                <span>Press Run checks to simulate the design. Agent runs appear under Verification.</span>
               </div>
             ) : (
               jobs.map((job) => (
@@ -106,7 +106,7 @@ export function RunConsole({
               <>
                 <div className="job-output-header">
                   <div>
-                    <span className="eyebrow">JOB OUTPUT</span>
+                    <span className="eyebrow">Output</span>
                     <b>{selectedJob.tool}</b>
                   </div>
                   <span className={`job-status-text ${selectedJob.status}`}>
