@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import type { ToolStep } from "../agent/fuel";
+import { useAgent } from "../agent/useAgent";
 import type { Check, ConstraintSet, SurfaceId } from "../types";
 import { Icon } from "./icons";
 import { StatusPill } from "./ui";
@@ -123,6 +125,45 @@ const stepLabel: Record<StepStatus, string> = {
   pending: "PENDING",
 };
 
+const formatTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+// One line describing a live tool call: what it touched, and for simulations what the runner measured.
+function liveStepDetail(step: ToolStep): string {
+  const input = step.input as Record<string, unknown>;
+  const target = [input.filePath, input.file, input.kind, input.query, input.revision_id, input.block_id, input.run_id]
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.replace(/^.*?\/(design|tests|ip|workflows)\//, "$1/"))
+    .join(" · ");
+  if (step.error) return `${target ? target + " · " : ""}${step.error}`;
+  if (step.tool === "rocket_run_job" && step.output) {
+    try {
+      const result = JSON.parse(step.output);
+      if (result.error) return result.error;
+      const checks = Object.entries(result.checks ?? {}) as [string, { status: string; measured?: number }][];
+      return checks.map(([id, check]) => `${id.split(".").pop()} ${check.measured ?? ""} ${check.status}`).join(" · ");
+    } catch {
+      return target;
+    }
+  }
+  return target;
+}
+
+function liveActivityStep(step: ToolStep): ActivityStep {
+  const status: StepStatus = step.status === "error" ? "failed" : step.status;
+  return { id: step.id, label: step.label, detail: liveStepDetail(step), tool: step.tool, status, time: formatTime(step.time) };
+}
+
+function diffLines(diff: string) {
+  return diff
+    .split("\n")
+    .filter((line) => !/^(Index:|={5,}|--- |\+\+\+ )/.test(line))
+    .map((line, index) => (
+      <span key={index} className={line.startsWith("+") ? "diff-add" : line.startsWith("-") ? "diff-del" : ""}>
+        {line || " "}
+      </span>
+    ));
+}
+
 export function AssistantPanel({
   width,
   tab,
@@ -174,10 +215,34 @@ export function AssistantPanel({
   const failed = checks.filter((check) => check.status === "failed").length;
   const limitReached = iteration >= constraints.maxIterations;
 
+  // Live/replay: everything below comes from the Rocket Fuel agent's event stream instead of the mock.
+  const agent = useAgent();
+  const live = agent.mode !== "mock";
+  const replay = agent.mode === "replay";
+  const liveApprovals = agent.view.approvals.filter((approval) => approval.status === "pending");
+  const liveChecks = Object.values(agent.view.checks);
+  const shownMessages: Message[] = live
+    ? agent.view.messages.map((message) => ({ ...message, time: formatTime(message.time) }))
+    : messages;
+  const shownSteps = live ? agent.view.steps.slice().reverse().map(liveActivityStep) : steps;
+  const shownBusy = live ? agent.view.status === "busy" : busy;
+  const pendingCount = live ? liveApprovals.length : pendingApproval ? 1 : 0;
+  const shownIteration = live ? agent.view.iteration?.used ?? 0 : iteration;
+  const shownLimit = live ? agent.view.iteration?.limit ?? constraints.maxIterations : constraints.maxIterations;
+  const shownLimitReached = live ? !!agent.view.iteration?.limitReached : limitReached;
+  const shownPassed = live ? liveChecks.filter((check) => check.status === "PASS").length : passed;
+  const shownTotal = live ? liveChecks.length : checks.length;
+  const liveError = agent.error ?? agent.view.error;
+  const quickPrompts = replay
+    ? []
+    : live
+      ? ["Bring this op-amp to spec", "Explain the failing check", "Register it as a reusable block"]
+      : ["Fix timing at 125 MHz", "Run supported checks", "Explain the failing check"];
+
   useEffect(() => {
     const element = chatRef.current;
     if (element) element.scrollTop = element.scrollHeight;
-  }, [messages, busy, pendingApproval, tab]);
+  }, [messages, busy, pendingApproval, tab, agent.view]);
 
   const addMessage = (role: Message["role"], text: string) => {
     idRef.current += 1;
@@ -303,6 +368,13 @@ export function AssistantPanel({
 
   const send = (raw: string) => {
     const text = raw.trim();
+    if (live) {
+      // The user's message comes back on the event stream, so it isn't added here.
+      if (!text || shownBusy || replay) return;
+      setInput("");
+      void agent.send(text, constraints.autonomy === "auto" ? "auto" : "approval");
+      return;
+    }
     if (!text || busy) return;
 
     addMessage("user", text);
@@ -385,14 +457,26 @@ export function AssistantPanel({
           </span>
           <div>
             <b>Rocket assistant</b>
-            <span>{provider.label} · {model}</span>
+            <span>{live ? `Rocket Fuel · ${agent.view.model ?? agent.view.replay?.model ?? "opencode"}` : `${provider.label} · ${model}`}</span>
           </div>
         </div>
         <div className="assistant-header-actions">
-          <span className="live-pill">
-            <i />
-            LIVE
-          </span>
+          {replay ? (
+            <span className="live-pill replay">
+              <i />
+              REPLAY
+            </span>
+          ) : live ? (
+            <span className={`live-pill ${agent.connected ? "" : "offline"}`}>
+              <i />
+              {agent.connected ? "LIVE" : "OFFLINE"}
+            </span>
+          ) : (
+            <span className="live-pill offline">
+              <i />
+              MOCK
+            </span>
+          )}
           <button className="icon-button" onClick={onClose} title="Close assistant" aria-label="Close assistant">
             <Icon name="close" size={15} />
           </button>
@@ -415,7 +499,7 @@ export function AssistantPanel({
             onClick={() => onTabChange(id)}
           >
             {label}
-            {id === "activity" && pendingApproval && <span className="tab-dot" />}
+            {id === "activity" && pendingCount > 0 && <span className="tab-dot" />}
           </button>
         ))}
       </div>
@@ -423,7 +507,18 @@ export function AssistantPanel({
       {tab === "chat" && (
         <>
           <div className="assistant-chat" ref={chatRef}>
-            {messages.map((message) => (
+            {replay && (
+              <div className="replay-banner">
+                <b>REPLAY</b> of a recorded session
+                {agent.view.replay?.recordedAt && ` · ${new Date(agent.view.replay.recordedAt).toLocaleString()}`}
+                {agent.view.replay?.model && ` · ${agent.view.replay.model}`}. Nothing here is running now.
+              </div>
+            )}
+            {live && liveError && <div className="agent-error">{liveError}</div>}
+            {live && !replay && shownMessages.length === 0 && (
+              <p className="agent-empty">Connected to the Rocket Fuel agent. Ask it to work on the open project.</p>
+            )}
+            {shownMessages.map((message) => (
               <div className={`assistant-message ${message.role}`} key={message.id}>
                 {message.role === "agent" && (
                   <span className="assistant-avatar">
@@ -440,7 +535,7 @@ export function AssistantPanel({
               </div>
             ))}
 
-            {busy && (
+            {shownBusy && (
               <div className="assistant-message agent">
                 <span className="assistant-avatar">
                   <Icon name="sparkles" size={12} />
@@ -455,7 +550,39 @@ export function AssistantPanel({
               </div>
             )}
 
-            {pendingApproval && (
+            {live &&
+              liveApprovals.map((approval) => (
+                <div className="approval-card" key={approval.id}>
+                  <div className="approval-heading">
+                    <span className="approval-title">
+                      <Icon name="warning" size={14} />
+                      Approval required: {approval.label}
+                    </span>
+                    <span className="approval-tool">{approval.permission}</span>
+                  </div>
+                  {approval.files.map((file) => (
+                    <div className="approval-path" key={file}>
+                      <Icon name="file" size={12} />
+                      {file.replace(/^.*?\/(design|tests|ip|workflows)\//, "$1/")}
+                    </div>
+                  ))}
+                  {approval.hypothesis && <p className="approval-desc">{approval.hypothesis}</p>}
+                  {approval.note && <p className="approval-desc">{approval.note}</p>}
+                  {approval.diff && <pre className="diff-block">{diffLines(approval.diff)}</pre>}
+                  <div className="approval-actions">
+                    <button className="secondary-button" onClick={() => void agent.reject(approval.id)} disabled={replay}>
+                      Reject
+                    </button>
+                    <button className="primary-button" onClick={() => void agent.approve(approval.id)} disabled={replay}>
+                      <Icon name="check" size={13} />
+                      Approve
+                    </button>
+                  </div>
+                  <small className="approval-note">The agent waits until you answer. Rejecting changes nothing.</small>
+                </div>
+              ))}
+
+            {!live && pendingApproval && (
               <div className="approval-card">
                 <div className="approval-heading">
                   <span className="approval-title">
@@ -503,13 +630,11 @@ export function AssistantPanel({
 
           <div className="assistant-composer">
             <div className="quick-prompts">
-              {["Fix timing at 125 MHz", "Run supported checks", "Explain the failing check"].map(
-                (prompt) => (
-                  <button key={prompt} onClick={() => send(prompt)} disabled={busy}>
-                    {prompt}
-                  </button>
-                ),
-              )}
+              {quickPrompts.map((prompt) => (
+                <button key={prompt} onClick={() => send(prompt)} disabled={shownBusy}>
+                  {prompt}
+                </button>
+              ))}
             </div>
             <div className="composer-box">
               <textarea
@@ -522,22 +647,29 @@ export function AssistantPanel({
                   }
                 }}
                 rows={2}
-                placeholder="Describe a design change or ask for evidence…"
+                disabled={replay}
+                placeholder={replay ? "Replay is read-only" : "Describe a design change or ask for evidence…"}
                 aria-label="Message the assistant"
               />
               <div className="composer-actions">
-                <span className={`composer-context ${limitReached ? "limit" : ""}`}>
-                  {iteration}/{constraints.maxIterations} iterations ·{" "}
+                <span className={`composer-context ${shownLimitReached ? "limit" : ""}`}>
+                  {shownIteration}/{shownLimit} iterations ·{" "}
                   {constraints.autonomy === "auto" ? "auto" : "approval"}
                 </span>
-                <button
-                  className="primary-button"
-                  onClick={() => send(input)}
-                  disabled={busy || !input.trim()}
-                >
-                  {busy ? "Thinking…" : "Send"}
-                  <Icon name="chevronRight" size={13} />
-                </button>
+                {live && !replay && shownBusy ? (
+                  <button className="secondary-button" onClick={() => void agent.stop()}>
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    className="primary-button"
+                    onClick={() => send(input)}
+                    disabled={shownBusy || replay || !input.trim()}
+                  >
+                    {shownBusy ? "Thinking…" : "Send"}
+                    <Icon name="chevronRight" size={13} />
+                  </button>
+                )}
               </div>
             </div>
             <small className="composer-note">⌘ / Ctrl + Enter to send · source edits require approval</small>
@@ -551,22 +683,35 @@ export function AssistantPanel({
             <div>
               <span className="eyebrow">ITERATION</span>
               <b>
-                {iteration}/{constraints.maxIterations}
+                {shownIteration}/{shownLimit}
               </b>
             </div>
             <div>
               <span className="eyebrow">PENDING</span>
-              <b className={pendingApproval ? "pending" : ""}>{pendingApproval ? 1 : 0}</b>
+              <b className={pendingCount > 0 ? "pending" : ""}>{pendingCount}</b>
             </div>
             <div>
-              <span className="eyebrow">VERIFIED</span>
+              <span className="eyebrow">{live ? "PASSING" : "VERIFIED"}</span>
               <b>
-                {passed}/{checks.length}
+                {shownPassed}/{shownTotal}
               </b>
             </div>
           </div>
 
-          {pendingApproval && (
+          {live && liveApprovals.length > 0 && (
+            <div className="approval-banner">
+              <Icon name="warning" size={15} />
+              <div>
+                <b>{liveApprovals.length === 1 ? "Change waiting for approval" : `${liveApprovals.length} changes waiting for approval`}</b>
+                <span>{liveApprovals.map((approval) => approval.label).join(" · ")}</span>
+              </div>
+              <button className="secondary-button" onClick={() => onTabChange("chat")}>
+                Review
+              </button>
+            </div>
+          )}
+
+          {!live && pendingApproval && (
             <div className="approval-banner">
               <Icon name="warning" size={15} />
               <div>
@@ -580,7 +725,7 @@ export function AssistantPanel({
           )}
 
           <div className="step-list">
-            {steps.map((step) => (
+            {shownSteps.map((step) => (
               <div className={`step-row ${step.status}`} key={step.id}>
                 <span className={`step-icon ${step.status}`}>
                   {step.status === "completed" ? (

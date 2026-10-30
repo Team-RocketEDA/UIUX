@@ -5113,3 +5113,52 @@ button.artifact-path:hover b {
     flex-wrap: wrap;
   }
 }
+
+/* Rocket Fuel agent connection (live / replay / mock) */
+.live-pill.replay {
+  border-color: #5a4724;
+  color: var(--amber);
+  background: rgba(80, 60, 20, 0.28);
+}
+
+.live-pill.replay i {
+  background: var(--amber);
+  box-shadow: 0 0 7px rgba(230, 181, 102, 0.7);
+}
+
+.live-pill.offline {
+  border-color: #2c3844;
+  color: var(--muted);
+  background: transparent;
+}
+
+.live-pill.offline i {
+  background: var(--muted);
+  box-shadow: none;
+}
+
+.replay-banner {
+  margin-bottom: 10px;
+  padding: 7px 9px;
+  border: 1px solid #5a4724;
+  border-radius: 4px;
+  color: var(--amber);
+  background: rgba(80, 60, 20, 0.22);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.agent-error {
+  margin-bottom: 10px;
+  padding: 7px 9px;
+  border: 1px solid #5c2a30;
+  border-radius: 4px;
+  color: var(--red);
+  background: rgba(90, 30, 36, 0.22);
+  font-size: 10px;
+}
+
+.agent-empty {
+  color: var(--muted);
+  font-size: 10.5px;
+}
