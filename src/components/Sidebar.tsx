@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { ProjectFile, SurfaceId } from "../types";
-import { pdkLabel } from "../data";
 import { Icon, type IconName } from "./icons";
+
+const pdkLabel = (pdk: string) => (pdk === "none" ? "Generic models (no PDK)" : pdk);
 
 const surfaces: { id: SurfaceId; label: string; icon: IconName }[] = [
   { id: "overview", label: "Overview", icon: "home" },
@@ -159,7 +160,7 @@ export function Sidebar({
       </div>
 
       <button className="sidebar-footer" onClick={() => onNavigate("constraints")}>
-        <span className="pdk-mark">S</span>
+        <span className="pdk-mark">{pdk === "none" ? "G" : pdk.charAt(0).toUpperCase()}</span>
         <span className="sidebar-footer-copy">
           <span className="eyebrow">ACTIVE PDK</span>
           <b>{pdkLabel(pdk)}</b>

@@ -1,14 +1,21 @@
-import { project } from "../data";
 import { Icon } from "./icons";
 
 export function TopBar({
+  projectName,
   revision,
+  dirty,
   runningJobs,
+  agentState,
   onExport,
+  onSwitchProject,
 }: {
+  projectName: string;
   revision: string;
+  dirty: boolean;
   runningJobs: number;
+  agentState: string;
   onExport: () => void;
+  onSwitchProject: () => void;
 }) {
   return (
     <header className="topbar">
@@ -19,20 +26,25 @@ export function TopBar({
         </strong>
       </div>
 
-      <div className="project-pill">
+      <button className="project-pill" onClick={onSwitchProject} title="Switch project">
         <Icon name="folder" size={13} />
-        <b>{project.name}</b>
-        <span className="branch">{project.branch}</span>
-      </div>
+        <b>{projectName}</b>
+        <span className="branch">switch</span>
+      </button>
 
       <div className="topbar-status">
-        <span className="topbar-chip">
-          <span className="status-dot passed" />
-          {revision}
+        <span className="topbar-chip" title="Git revision of the project">
+          <span className={`status-dot ${dirty ? "running" : "passed"}`} />
+          {revision || "no commits"}
+          {dirty ? " +changes" : ""}
         </span>
         <span className="topbar-chip">
           <Icon name="terminal" size={12} />
-          Local runner {runningJobs > 0 ? `· ${runningJobs} running` : "ready"}
+          Engine {runningJobs > 0 ? `· ${runningJobs} running` : "ready"}
+        </span>
+        <span className="topbar-chip">
+          <Icon name="sparkles" size={12} />
+          Assistant {agentState}
         </span>
       </div>
 
@@ -41,9 +53,6 @@ export function TopBar({
           <Icon name="export" size={13} />
           Export
         </button>
-        <div className="avatar" title="Signed in as Ayush">
-          AA
-        </div>
       </div>
     </header>
   );
