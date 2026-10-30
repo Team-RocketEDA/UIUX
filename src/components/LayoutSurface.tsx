@@ -1,4 +1,8 @@
 import { useState } from "react";
+import type {
+  MouseEvent as ReactMouseEvent,
+  WheelEvent as ReactWheelEvent,
+} from "react";
 import { Icon } from "./icons";
 import { SurfaceHeader } from "./ui";
 
@@ -12,6 +16,62 @@ const layerDefinitions: { id: LayerId; label: string; color: string; detail: str
   { id: "met1", label: "Metal 1", color: "#55c7d9", detail: "li1 / met1" },
   { id: "met2", label: "Metal 2", color: "#c19bff", detail: "met2 / met3" },
   { id: "pads", label: "IO ring", color: "#e0ad5f", detail: "48 pads" },
+];
+
+type LayoutMacroInfo = {
+  id: string;
+  label: string;
+  sub: string;
+  tone: "sram" | "analog" | "photonic";
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  originUm: string;
+  sizeUm: string;
+  sourceFile: string;
+};
+
+const layoutMacros: LayoutMacroInfo[] = [
+  {
+    id: "u_sram",
+    label: "SRAM 2 KB",
+    sub: "hard macro · sky130",
+    tone: "sram",
+    x: 548,
+    y: 132,
+    width: 168,
+    height: 88,
+    originUm: "(1080, 240) µm",
+    sizeUm: "240 × 160 µm",
+    sourceFile: "design/layout.yaml",
+  },
+  {
+    id: "u_opamp",
+    label: "SKY130 OP-AMP",
+    sub: "analog macro · 61.4 dB",
+    tone: "analog",
+    x: 548,
+    y: 238,
+    width: 168,
+    height: 72,
+    originUm: "(1080, 440) µm",
+    sizeUm: "240 × 130 µm",
+    sourceFile: "design/analog/opamp.spice",
+  },
+  {
+    id: "u_mzi",
+    label: "CSPDK MZI",
+    sub: "photonic macro · 1550 nm",
+    tone: "photonic",
+    x: 548,
+    y: 328,
+    width: 168,
+    height: 72,
+    originUm: "(1080, 640) µm",
+    sizeUm: "240 × 130 µm",
+    sourceFile: "design/photonic/mzi.py",
+  },
 ];
 
 function buildCellRects() {
@@ -45,19 +105,68 @@ export function LayoutSurface({
     pads: true,
   });
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [dragStart, setDragStart] = useState<{ x: number; y: number; panX: number; panY: number } | null>(
+    null,
+  );
+  const [cursorUm, setCursorUm] = useState({ x: 820, y: 440 });
+  const [selectedMacroId, setSelectedMacroId] = useState<string | null>(null);
+
+  const selectedMacro = layoutMacros.find((macro) => macro.id === selectedMacroId) ?? null;
 
   const toggleLayer = (id: LayerId) =>
     setLayers((previous) => ({ ...previous, [id]: !previous[id] }));
 
+  const resetView = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const handleWheel = (event: ReactWheelEvent<SVGSVGElement>) => {
+    event.preventDefault();
+    const delta = event.deltaY < 0 ? 0.15 : -0.15;
+    setZoom((current) => Math.min(2.5, Math.max(0.6, Number((current + delta).toFixed(2)))));
+  };
+
+  const handleMouseDown = (event: ReactMouseEvent<SVGSVGElement>) => {
+    if (event.button !== 0) return;
+    if ((event.target as Element).closest(".layout-macro-group")) return;
+    setDragStart({ x: event.clientX, y: event.clientY, panX: pan.x, panY: pan.y });
+  };
+
+  const handleMouseMove = (event: ReactMouseEvent<SVGSVGElement>) => {
+    const rect = event.currentTarget.getBoundingClientRect();
+    if (rect.width > 0 && rect.height > 0) {
+      const relX = (event.clientX - rect.left) / rect.width;
+      const relY = (event.clientY - rect.top) / rect.height;
+      const svgX = (relX * WIDTH) / zoom + pan.x;
+      const svgY = (relY * HEIGHT) / zoom + pan.y;
+      const umX = Math.max(0, Math.min(1640, Math.round(((svgX - 36) / 828) * 1640)));
+      const umY = Math.max(0, Math.min(880, Math.round(((svgY - 30) / 458) * 880)));
+      setCursorUm({ x: umX, y: umY });
+    }
+    if (!dragStart) return;
+    const dx = (event.clientX - dragStart.x) / zoom;
+    const dy = (event.clientY - dragStart.y) / zoom;
+    setPan({
+      x: Math.max(-300, Math.min(300, Math.round(dragStart.panX - dx))),
+      y: Math.max(-200, Math.min(200, Math.round(dragStart.panY - dy))),
+    });
+  };
+
+  const handleMouseUp = () => setDragStart(null);
+
   const viewWidth = WIDTH / zoom;
   const viewHeight = HEIGHT / zoom;
+  const viewBoxX = (WIDTH - viewWidth) / 2 + pan.x;
+  const viewBoxY = (HEIGHT - viewHeight) / 2 + pan.y;
 
   return (
     <div className="fill-surface layout-surface">
       <SurfaceHeader
         eyebrow="PHYSICAL DESIGN / KLAYOUT TARGET"
         title="Layout viewer"
-        subtitle="Preview of the completed LibreLane GDS. Geometry is source-backed; painting edits are outside this build."
+        subtitle="Preview of the completed LibreLane GDS. Drag to pan, scroll to zoom, or select a hard macro block."
         actions={
           <>
             <span className="viewer-pill">
@@ -84,12 +193,14 @@ export function LayoutSurface({
           <span className="layout-title">
             rocket_top <small>top cell</small>
           </span>
-          <span className="diagram-hint">GDS viewer · 1,284 cells · 2.1 MB</span>
+          <span className="diagram-hint">
+            GDS viewer · 1,284 cells · 2.1 MB · Drag to pan, wheel to zoom
+          </span>
           <div className="zoom-group">
             <button
               className="icon-button"
-              onClick={() => setZoom((value) => Math.max(0.75, value - 0.25))}
-              title="Zoom out"
+              onClick={() => setZoom((value) => Math.max(0.6, Number((value - 0.2).toFixed(2))))}
+              title="Zoom out (-)"
               aria-label="Zoom out"
             >
               <Icon name="zoomOut" size={14} />
@@ -97,16 +208,16 @@ export function LayoutSurface({
             <span>{Math.round(zoom * 100)}%</span>
             <button
               className="icon-button"
-              onClick={() => setZoom((value) => Math.min(2.25, value + 0.25))}
-              title="Zoom in"
+              onClick={() => setZoom((value) => Math.min(2.5, Number((value + 0.2).toFixed(2))))}
+              title="Zoom in (+)"
               aria-label="Zoom in"
             >
               <Icon name="zoomIn" size={14} />
             </button>
             <button
               className="icon-button"
-              onClick={() => setZoom(1)}
-              title="Fit to view"
+              onClick={resetView}
+              title="Fit to view (F)"
               aria-label="Fit to view"
             >
               <Icon name="fit" size={14} />
@@ -115,11 +226,19 @@ export function LayoutSurface({
         </div>
 
         <div className="layout-body">
-          <div className="diagram-canvas layout-canvas">
+          <div className={`diagram-canvas layout-canvas ${dragStart ? "panning" : ""}`}>
             <svg
-              viewBox={`${(WIDTH - viewWidth) / 2} ${(HEIGHT - viewHeight) / 2} ${viewWidth} ${viewHeight}`}
+              viewBox={`${viewBoxX} ${viewBoxY} ${viewWidth} ${viewHeight}`}
               role="img"
               aria-label="Routed die layout for rocket_top"
+              onWheel={handleWheel}
+              onMouseDown={handleMouseDown}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+              onMouseLeave={handleMouseUp}
+              onClick={(event) => {
+                if (event.target === event.currentTarget) setSelectedMacroId(null);
+              }}
             >
               <defs>
                 <pattern id="layout-grid" width="20" height="20" patternUnits="userSpaceOnUse">
@@ -214,29 +333,44 @@ export function LayoutSurface({
               )}
 
               <g className="layout-macros">
-                <rect x="548" y="132" width="168" height="88" rx="3" className="macro sram" />
-                <text x="632" y="171" textAnchor="middle" className="macro-label">
-                  SRAM 2 KB
-                </text>
-                <text x="632" y="187" textAnchor="middle" className="macro-sub">
-                  hard macro · sky130
-                </text>
-
-                <rect x="548" y="238" width="168" height="72" rx="3" className="macro analog" />
-                <text x="632" y="270" textAnchor="middle" className="macro-label">
-                  SKY130 OP-AMP
-                </text>
-                <text x="632" y="286" textAnchor="middle" className="macro-sub">
-                  analog macro · 61.4 dB
-                </text>
-
-                <rect x="548" y="328" width="168" height="72" rx="3" className="macro photonic" />
-                <text x="632" y="360" textAnchor="middle" className="macro-label">
-                  CSPDK MZI
-                </text>
-                <text x="632" y="376" textAnchor="middle" className="macro-sub">
-                  photonic macro · 1550 nm
-                </text>
+                {layoutMacros.map((macro) => {
+                  const isSelected = selectedMacroId === macro.id;
+                  const centerX = macro.x + macro.width / 2;
+                  const centerY = macro.y + macro.height / 2;
+                  return (
+                    <g
+                      key={macro.id}
+                      className={`layout-macro-group ${isSelected ? "selected" : ""}`}
+                      role="button"
+                      tabIndex={0}
+                      aria-label={`${macro.label}, ${macro.sub}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setSelectedMacroId((current) => (current === macro.id ? null : macro.id));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          setSelectedMacroId((current) => (current === macro.id ? null : macro.id));
+                        }
+                      }}
+                    >
+                      <rect
+                        x={macro.x}
+                        y={macro.y}
+                        width={macro.width}
+                        height={macro.height}
+                        rx="3"
+                        className={`macro ${macro.tone} ${isSelected ? "selected" : ""}`}
+                      />
+                      <text x={centerX} y={centerY - 4} textAnchor="middle" className="macro-label">
+                        {macro.label}
+                      </text>
+                      <text x={centerX} y={centerY + 12} textAnchor="middle" className="macro-sub">
+                        {macro.sub}
+                      </text>
+                    </g>
+                  );
+                })}
               </g>
 
               {layers.pads && (
@@ -294,27 +428,58 @@ export function LayoutSurface({
               ))}
             </div>
 
-            <div className="inspector-section">
-              <span className="eyebrow">ARTIFACT</span>
-              <dl className="inspector-params">
-                <div>
-                  <dt>Flow</dt>
-                  <dd>LibreLane 2.4</dd>
-                </div>
-                <div>
-                  <dt>Top cell</dt>
-                  <dd>rocket_top</dd>
-                </div>
-                <div>
-                  <dt>Area</dt>
-                  <dd>0.184 mm²</dd>
-                </div>
-                <div>
-                  <dt>Units</dt>
-                  <dd>µm · GDSII</dd>
-                </div>
-              </dl>
-            </div>
+            {selectedMacro ? (
+              <div className="inspector-section">
+                <span className="eyebrow">SELECTED MACRO ({selectedMacro.id})</span>
+                <dl className="inspector-params">
+                  <div>
+                    <dt>Block</dt>
+                    <dd>{selectedMacro.label}</dd>
+                  </div>
+                  <div>
+                    <dt>Origin</dt>
+                    <dd>{selectedMacro.originUm}</dd>
+                  </div>
+                  <div>
+                    <dt>Footprint</dt>
+                    <dd>{selectedMacro.sizeUm}</dd>
+                  </div>
+                  <div>
+                    <dt>Source</dt>
+                    <dd>{selectedMacro.sourceFile.split("/").pop()}</dd>
+                  </div>
+                </dl>
+                <button
+                  className="secondary-button"
+                  onClick={() => onOpenFile(selectedMacro.sourceFile)}
+                >
+                  <Icon name="code" size={12} />
+                  Open {selectedMacro.sourceFile.split("/").pop()}
+                </button>
+              </div>
+            ) : (
+              <div className="inspector-section">
+                <span className="eyebrow">ARTIFACT</span>
+                <dl className="inspector-params">
+                  <div>
+                    <dt>Flow</dt>
+                    <dd>LibreLane 2.4</dd>
+                  </div>
+                  <div>
+                    <dt>Top cell</dt>
+                    <dd>rocket_top</dd>
+                  </div>
+                  <div>
+                    <dt>Area</dt>
+                    <dd>0.184 mm²</dd>
+                  </div>
+                  <div>
+                    <dt>Units</dt>
+                    <dd>µm · GDSII</dd>
+                  </div>
+                </dl>
+              </div>
+            )}
 
             <div className="inline-callout warning">
               <Icon name="warning" size={14} />
@@ -324,6 +489,9 @@ export function LayoutSurface({
         </div>
 
         <div className="diagram-statusbar">
+          <span>
+            X: {cursorUm.x} µm · Y: {cursorUm.y} µm
+          </span>
           <span>GDSII · 1,284 cells</span>
           <span>SkyWater SKY130</span>
           <span>Revision 8f3c1a2</span>

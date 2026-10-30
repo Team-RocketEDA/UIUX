@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ToolStep } from "../agent/fuel";
-import { useAgent } from "../agent/useAgent";
+import { useAgent, type Agent } from "../agent/useAgent";
 import type { Check, ConstraintSet, SurfaceId } from "../types";
 import { Icon } from "./icons";
 import { StatusPill } from "./ui";
@@ -100,8 +100,22 @@ const seedSteps: ActivityStep[] = [
 const providers = [
   {
     id: "meta",
-    label: "Meta Models API",
-    models: ["Llama 4 Maverick", "Llama 4 Scout", "Llama 3.3 70B Instruct"],
+    label: "Meta Models API (Rocket Fuel default)",
+    models: [
+      "meta/muse-spark-1.3 (Muse Spark 1.3)",
+      "meta/muse-spark-1.3-contributor (Contributor)",
+      "Llama 4 Maverick",
+      "Llama 3.3 70B Instruct",
+    ],
+  },
+  {
+    id: "opencode",
+    label: "OpenCode Harness (free rehearsal)",
+    models: [
+      "opencode/beam-free",
+      "opencode/nemotron-3.5-lightning-free",
+      "opencode/glm-5.3-flash-free",
+    ],
   },
   {
     id: "openai",
@@ -130,17 +144,36 @@ const formatTime = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: "
 // One line describing a live tool call: what it touched, and for simulations what the runner measured.
 function liveStepDetail(step: ToolStep): string {
   const input = step.input as Record<string, unknown>;
-  const target = [input.filePath, input.file, input.kind, input.query, input.revision_id, input.block_id, input.run_id]
-    .filter((value): value is string => typeof value === "string")
+  const sources = Array.isArray(input.sources)
+    ? input.sources.filter((item): item is string => typeof item === "string").join(", ")
+    : undefined;
+  const target = [input.filePath, input.file, sources, input.kind, input.query, input.revision_id, input.block_id, input.run_id]
+    .filter((value): value is string => typeof value === "string" && value.length > 0)
     .map((value) => value.replace(/^.*?\/(design|tests|ip|workflows)\//, "$1/"))
     .join(" · ");
   if (step.error) return `${target ? target + " · " : ""}${step.error}`;
-  if (step.tool === "rocket_run_job" && step.output) {
+  if (step.output) {
     try {
       const result = JSON.parse(step.output);
       if (result.error) return result.error;
-      const checks = Object.entries(result.checks ?? {}) as [string, { status: string; measured?: number }][];
-      return checks.map(([id, check]) => `${id.split(".").pop()} ${check.measured ?? ""} ${check.status}`).join(" · ");
+      if (step.tool === "rocket_run_job" && result.checks) {
+        const checks = Object.entries(result.checks) as [string, { status: string; measured?: number }][];
+        return checks.map(([id, check]) => `${id.split(".").pop()} ${check.measured ?? ""} ${check.status}`).join(" · ");
+      }
+      if (step.tool === "engine_get_job_status" && result.verdict) {
+        const measurements = Array.isArray(result.verdict.measurements) ? result.verdict.measurements : [];
+        if (measurements.length > 0) {
+          return measurements
+            .map((m: { name?: string; value?: number; unit?: string; status?: string }) =>
+              `${m.name ?? "metric"} ${m.value ?? ""}${m.unit ? " " + m.unit : ""} ${(m.status ?? "").toUpperCase()}`,
+            )
+            .join(" · ");
+        }
+        return `${result.verdict.status ?? result.state ?? ""}${result.verdict.reason ? " · " + result.verdict.reason : ""}`;
+      }
+      if (step.tool === "engine_run_spice" && result.run_id) {
+        return `${target ? target + " · " : ""}${result.state ?? "queued"} (${result.run_id})`;
+      }
     } catch {
       return target;
     }
@@ -179,6 +212,7 @@ export function AssistantPanel({
   onOpenFile,
   onNavigate,
   notify,
+  agent: externalAgent,
 }: {
   width: number;
   tab: AssistantTab;
@@ -194,6 +228,7 @@ export function AssistantPanel({
   onOpenFile: (path: string) => void;
   onNavigate: (surface: SurfaceId) => void;
   notify: (message: string) => void;
+  agent?: Agent;
 }) {
   const [messages, setMessages] = useState<Message[]>(seedMessages);
   const [steps, setSteps] = useState<ActivityStep[]>(seedSteps);
@@ -216,7 +251,8 @@ export function AssistantPanel({
   const limitReached = iteration >= constraints.maxIterations;
 
   // Live/replay: everything below comes from the Rocket Fuel agent's event stream instead of the mock.
-  const agent = useAgent();
+  const fallbackAgent = useAgent();
+  const agent = externalAgent ?? fallbackAgent;
   const live = agent.mode !== "mock";
   const replay = agent.mode === "replay";
   const liveApprovals = agent.view.approvals.filter((approval) => approval.status === "pending");

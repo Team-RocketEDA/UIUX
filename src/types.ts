@@ -1,4 +1,4 @@
-export type CheckStatus = "passed" | "failed" | "running" | "unsupported" | "skipped";
+export type CheckStatus = "passed" | "failed" | "running" | "not_run" | "unsupported" | "skipped";
 
 export type Domain = "digital" | "analog" | "photonic";
 
@@ -79,6 +79,37 @@ export type SchematicPort = {
   offset: number;
 };
 
+export type SchematicSymbolKind =
+  | "block"
+  | "nmos"
+  | "pmos"
+  | "capacitor"
+  | "resistor"
+  | "isource"
+  | "opamp"
+  | "dff"
+  | "mzi";
+
+export type SymbolPin = {
+  number: string;
+  name: string;
+  side: "left" | "right" | "top" | "bottom";
+  electricalType: "input" | "output" | "power" | "passive" | "bidirectional";
+  offset: number;
+};
+
+export type CircuitSymbolDef = {
+  id: string;
+  name: string;
+  referencePrefix: string;
+  domain: Domain;
+  shape: Exclude<SchematicSymbolKind, "block">;
+  pdkCell: string;
+  description: string;
+  defaultParams: { name: string; value: string }[];
+  pins: SymbolPin[];
+};
+
 export type SchematicInstance = {
   id: string;
   label: string;
@@ -90,6 +121,8 @@ export type SchematicInstance = {
   tone: "blue" | "green" | "purple" | "amber";
   badge: "IP" | "SHEET" | "MACRO";
   sheet?: string;
+  symbol?: SchematicSymbolKind;
+  sourceFile?: string;
   params: { name: string; value: string }[];
   ports: SchematicPort[];
 };

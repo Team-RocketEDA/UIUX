@@ -9,6 +9,7 @@ const statusCopy: Record<Check["status"], string> = {
   passed: "Actual tool output met the acceptance criterion for this revision.",
   failed: "The run completed but missed the target. This stays failed until a new run passes.",
   running: "A runner job is active. Results are not evidence until the run completes.",
+  not_run: "No run completed for this revision (missing dependency, input, or not yet queued). Not a pass.",
   unsupported: "No compatible tool or deck was available. This is not a pass and is not counted as one.",
   skipped: "Required checks are never silently skipped. Skipped means no evidence was produced.",
 };

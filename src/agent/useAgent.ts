@@ -30,10 +30,31 @@ export function useAgent(): Agent {
     const controller = new AbortController();
     let retry: number | undefined;
 
+    const restoreLatestSession = async () => {
+      if (mode !== "live" || sessionRef.current) return;
+      try {
+        const latest = await client.latestSession();
+        if (!latest || controller.signal.aborted) return;
+        sessionRef.current = latest;
+        const events = await client.history(latest);
+        if (controller.signal.aborted) return;
+        setView((current) => events.reduce((acc, event) => reduce(acc, event), current));
+      } catch {
+        // Ignore history lookup failures on fresh servers with no prior session.
+      }
+    };
+
     const connect = () => {
       setConnected(true);
+      void restoreLatestSession();
       client
-        .subscribe((event) => setView((current) => reduce(current, event)), controller.signal)
+        .subscribe((event) => {
+          setView((current) => {
+            const next = reduce(current, event);
+            if (next.sessionId && !sessionRef.current) sessionRef.current = next.sessionId;
+            return next;
+          });
+        }, controller.signal)
         .then(() => {
           setConnected(false);
           // A replay ends when the recording does; a live stream should come back.
