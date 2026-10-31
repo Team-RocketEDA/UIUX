@@ -1,4 +1,3 @@
-// Copied from rocket_fuel/client/src/client.ts (Team-RocketEDA/rocket_fuel). Edit it there, then copy again.
 // Minimal opencode server client for the RocketEDA UI. No dependencies; uses fetch.
 // In Electron, run it in main (it holds the password) or point the renderer at a proxy that adds auth.
 

@@ -13,12 +13,13 @@ const shortPath = (value: string) =>
 // One quiet line per tool call: what it touched, and for simulations what the engine measured.
 function stepDetail(step: ToolStep): string {
   const input = step.input as Record<string, unknown>;
-  const target = [input.filePath, input.file, input.query, input.revision_id, input.block_id]
+  const sources = Array.isArray(input.sources) ? input.sources.filter((item): item is string => typeof item === "string") : [];
+  const target = [input.filePath, input.file, ...sources, input.query, input.revision_id, input.block_id]
     .filter((value): value is string => typeof value === "string")
     .map(shortPath)
     .join(" · ");
   if (step.error) return step.error.split("\n")[0];
-  if (step.output && (step.tool === "engine_get_job_status" || step.tool === "rocket_run_job")) {
+  if (step.output && (step.tool === "engine_run_job" || step.tool === "engine_get_job_status" || step.tool === "rocket_run_job")) {
     try {
       const result = JSON.parse(step.output);
       const verdict = result.verdict ?? result;
@@ -26,6 +27,7 @@ function stepDetail(step: ToolStep): string {
         return `${verdict.status} · ` + verdict.measurements.map((m: { name: string; value: number }) => `${m.name} ${m.value.toFixed(2)}`).join(", ");
       }
       if (verdict.status) return `${verdict.status}${verdict.reason ? ` · ${verdict.reason}` : ""}`;
+      if (result.ok === false) return result.message ?? result.code;
     } catch {
       return target;
     }
