@@ -2,25 +2,25 @@
 
 :root {
   color-scheme: dark;
-  --bg: #09090b;
-  --bg-deep: #060608;
-  --bg-raised: #111114;
-  --bg-panel: #141418;
-  --bg-panel-soft: #18181d;
-  --bg-input: #0c0c0f;
-  --border: #232329;
-  --border-strong: #32323b;
-  --text: #ededf0;
-  --text-soft: #b4b4be;
-  --muted: #7d7d8a;
-  --faint: #52525d;
-  --blue: #3b82f6;
-  --blue-strong: #2563eb;
-  --green: #10b981;
-  --red: #ef4444;
+  --bg: #141413;
+  --bg-deep: #0e0e0d;
+  --bg-raised: #1b1b19;
+  --bg-panel: #22221f;
+  --bg-panel-soft: #2a2a26;
+  --bg-input: #111110;
+  --border: #2e2e2a;
+  --border-strong: #3f3f39;
+  --text: #f2f0e8;
+  --text-soft: #c8c5b8;
+  --muted: #8e8b7e;
+  --faint: #625f55;
+  --blue: #e59934;
+  --blue-strong: #d48822;
+  --green: #2ebd85;
+  --red: #e5534b;
   --amber: #f59e0b;
-  --purple: #8b5cf6;
-  --cyan: #06b6d4;
+  --purple: #d48822;
+  --cyan: #2ebd85;
   --radius: 4px;
   --shadow: none;
   --mono: "JetBrains Mono", "DM Mono", "SF Mono", Consolas, monospace;
@@ -5935,4 +5935,93 @@ button, a { -webkit-tap-highlight-color: transparent; }
   padding: 0 6px;
   border-left: 1px solid var(--border);
   border-right: 1px solid var(--border);
+}
+/* AnalogStudio Pro / KiCad Warm Graphite + CAD Amber & Emerald Palette Overrides */
+.primary-button {
+  color: #111110 !important;
+  background: #e59934 !important;
+  border-color: #e59934 !important;
+  font-weight: 600 !important;
+}
+.primary-button:hover:not(:disabled) {
+  color: #111110 !important;
+  background: #f0a846 !important;
+  border-color: #f0a846 !important;
+}
+.mode-toggle-btn.active,
+.sheet-pill-btn.active,
+.sidebar-tabs button.active,
+.library-tabs button.active,
+.toolbar-button.active {
+  color: #f2f0e8 !important;
+  border-color: #d48822 !important;
+  background: rgba(229, 153, 52, 0.16) !important;
+}
+.instance-body,
+.schematic-instance.purple .instance-body,
+.schematic-instance.green .instance-body,
+.schematic-instance.amber .instance-body {
+  fill: #1b1c19 !important;
+  stroke: #484940 !important;
+  stroke-width: 1.1 !important;
+}
+.schematic-instance:hover .instance-body,
+.schematic-instance.selected .instance-body {
+  stroke: #e59934 !important;
+  stroke-width: 1.8 !important;
+}
+.instance-header,
+.schematic-instance.purple .instance-header,
+.schematic-instance.green .instance-header,
+.schematic-instance.amber .instance-header {
+  fill: #252622 !important;
+}
+.instance-divider {
+  stroke: #363730 !important;
+}
+.instance-ref {
+  fill: #e59934 !important;
+}
+.instance-badge,
+.instance-badge.sheet {
+  fill: #9c988b !important;
+}
+.instance-port circle {
+  fill: #111210 !important;
+  stroke: #e59934 !important;
+}
+.boundary-port circle {
+  fill: #111210 !important;
+  stroke: #e59934 !important;
+}
+.schematic-wire polyline {
+  stroke: #2ebd85 !important;
+  stroke-width: 1.35 !important;
+}
+.schematic-wire:hover polyline,
+.schematic-wire.highlighted polyline {
+  stroke: #f59e0b !important;
+  stroke-width: 2 !important;
+}
+.symbol-artwork .sym-stroke,
+.symbol-artwork .sym-stroke-bold {
+  stroke: #e59934 !important;
+}
+.symbol-artwork .sym-body {
+  fill: rgba(229, 153, 52, 0.1) !important;
+  stroke: #e59934 !important;
+}
+.symbol-artwork .sym-bubble {
+  fill: #1b1c19 !important;
+  stroke: #2ebd85 !important;
+}
+.symbol-artwork .sym-arrow {
+  fill: #e59934 !important;
+}
+.symbol-pin-num {
+  fill: #9c988b !important;
+}
+.symbol-row.active {
+  border-color: #d48822 !important;
+  background: rgba(229, 153, 52, 0.14) !important;
 }

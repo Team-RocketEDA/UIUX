@@ -357,20 +357,20 @@ function SymbolEditorCanvas({ symbol }: { symbol: CircuitSymbolDef }) {
     <svg viewBox="220 45 520 410" role="img" aria-label={`KiCad symbol editor for ${symbol.name}`}>
       <defs>
         <pattern id="symbol-grid-minor" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M20 0H0V20" fill="none" stroke="#152331" strokeWidth=".5" />
+          <path d="M20 0H0V20" fill="none" stroke="#1f201c" strokeWidth=".5" />
         </pattern>
         <pattern id="symbol-grid-major" width="100" height="100" patternUnits="userSpaceOnUse">
           <rect width="100" height="100" fill="url(#symbol-grid-minor)" />
-          <path d="M100 0H0V100" fill="none" stroke="#1f3347" strokeWidth=".9" />
+          <path d="M100 0H0V100" fill="none" stroke="#282a24" strokeWidth=".9" />
         </pattern>
       </defs>
-      <rect width={WIDTH} height={HEIGHT} fill="#091018" />
+      <rect width={WIDTH} height={HEIGHT} fill="#111210" />
       <rect width={WIDTH} height={HEIGHT} fill="url(#symbol-grid-major)" />
 
       {/* Origin crosshair */}
-      <line x1={centerX} y1={0} x2={centerX} y2={HEIGHT} stroke="#1f3850" strokeDasharray="4 4" />
-      <line x1={0} y1={centerY} x2={WIDTH} y2={centerY} stroke="#1f3850" strokeDasharray="4 4" />
-      <circle cx={centerX} cy={centerY} r={5} fill="none" stroke="#55c7d9" strokeWidth="1" />
+      <line x1={centerX} y1={0} x2={centerX} y2={HEIGHT} stroke="#2e3029" strokeDasharray="4 4" />
+      <line x1={0} y1={centerY} x2={WIDTH} y2={centerY} stroke="#2e3029" strokeDasharray="4 4" />
+      <circle cx={centerX} cy={centerY} r={5} fill="none" stroke="#e59934" strokeWidth="1" />
 
       <text className="sheet-title" x="242" y="74">
         {symbol.name}
@@ -386,8 +386,8 @@ function SymbolEditorCanvas({ symbol }: { symbol: CircuitSymbolDef }) {
         width={boxW}
         height={boxH}
         rx={10}
-        fill="rgba(17, 35, 52, 0.78)"
-        stroke="#4b89c8"
+        fill="rgba(28, 29, 25, 0.88)"
+        stroke="#d48822"
         strokeWidth="1.6"
       />
       <text x={boxX + 12} y={boxY - 10} className="instance-ref">
@@ -411,10 +411,10 @@ function SymbolEditorCanvas({ symbol }: { symbol: CircuitSymbolDef }) {
               y1={coords.y1}
               x2={coords.x2}
               y2={coords.y2}
-              stroke="#79b8ff"
+              stroke="#e59934"
               strokeWidth="1.8"
             />
-            <circle cx={outerX} cy={outerY} r={4.2} fill="#091018" stroke="#57d29a" strokeWidth="1.6" />
+            <circle cx={outerX} cy={outerY} r={4.2} fill="#111210" stroke="#2ebd85" strokeWidth="1.6" />
             <text x={coords.lx} y={coords.ly} textAnchor={coords.anchor} className="symbol-pin-name">
               {pin.name}
             </text>
@@ -447,10 +447,10 @@ function XschemSymCanvas({ model }: { model: SymRenderModel }) {
     >
       <defs>
         <pattern id="xschem-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#18181f" strokeWidth="0.8" />
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#1e201b" strokeWidth="0.8" />
         </pattern>
       </defs>
-      <rect x={vx} y={vy} width={vw} height={vh} fill="#08080b" />
+      <rect x={vx} y={vy} width={vw} height={vh} fill="#111210" />
       <rect x={vx} y={vy} width={vw} height={vh} fill="url(#xschem-grid)" />
       <line x1={vx} y1={0} x2={vx + vw} y2={0} className="symbol-origin-axis" strokeWidth="0.8" />
       <line x1={0} y1={vy} x2={0} y2={vy + vh} className="symbol-origin-axis" strokeWidth="0.8" />
@@ -471,8 +471,8 @@ function XschemSymCanvas({ model }: { model: SymRenderModel }) {
           y={Math.min(r.y1, r.y2)}
           width={Math.abs(r.x2 - r.x1)}
           height={Math.abs(r.y2 - r.y1)}
-          fill="rgba(59, 130, 246, 0.06)"
-          stroke="#60a5fa"
+          fill="rgba(229, 153, 52, 0.07)"
+          stroke="#e59934"
           strokeWidth="1.8"
         />
       ))}
@@ -481,7 +481,7 @@ function XschemSymCanvas({ model }: { model: SymRenderModel }) {
           key={`poly-${idx}`}
           points={poly.points.map((pt) => `${pt.x},${pt.y}`).join(" ")}
           fill="none"
-          stroke="#34d399"
+          stroke="#2ebd85"
           strokeWidth="2"
           strokeLinejoin="round"
         />
@@ -493,7 +493,7 @@ function XschemSymCanvas({ model }: { model: SymRenderModel }) {
           y1={l.y1}
           x2={l.x2}
           y2={l.y2}
-          stroke={l.layer === 4 ? "#38bdf8" : "#a1a1aa"}
+          stroke={l.layer === 4 ? "#e59934" : "#2ebd85"}
           strokeWidth={l.layer === 4 ? "2.1" : "1.6"}
           strokeLinecap="round"
         />
@@ -505,7 +505,7 @@ function XschemSymCanvas({ model }: { model: SymRenderModel }) {
           cy={a.y}
           r={a.r}
           fill="none"
-          stroke="#38bdf8"
+          stroke="#e59934"
           strokeWidth="1.8"
         />
       ))}
@@ -817,10 +817,10 @@ export function SchematicSurface({
               >
                 <defs>
                   <pattern id="schematic-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                    <path d="M20 0H0V20" fill="none" stroke="#16161c" strokeWidth=".6" />
+                    <path d="M20 0H0V20" fill="none" stroke="#1e201b" strokeWidth=".6" />
                   </pattern>
                 </defs>
-                <rect x="-2000" y="-2000" width="6000" height="6000" fill="#09090b" />
+                <rect x="-2000" y="-2000" width="6000" height="6000" fill="#111210" />
                 <rect x="-2000" y="-2000" width="6000" height="6000" fill="url(#schematic-grid)" opacity=".75" />
 
                 {sheet.boundaryPorts.map((port) => (
