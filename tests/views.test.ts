@@ -83,3 +83,21 @@ function connected(segments: { x1: number; y1: number; x2: number; y2: number }[
   }
   return seen.size === segments.length;
 }
+
+// ---- plots: ngspice rawfile from a real engine run (every 10th point of the op-amp AC sweep) ----
+import { bode, nearest, parseRawfile, unityGain } from "../src/plots/rawfile.ts";
+
+test("reads an ngspice ASCII rawfile and derives the Bode view", () => {
+  const plot = parseRawfile(readFileSync(new URL("./fixtures/opamp-ac.raw", import.meta.url), "utf8"));
+  assert.equal(plot.plotname, "AC Analysis");
+  assert.ok(plot.complex);
+  assert.ok(plot.variables.some((v) => v.name === "v(out)"));
+  const points = bode(plot, "v(out)");
+  assert.equal(points.length, plot.values[0].length);
+  // Same numbers the engine measured on this run: 55.73 dB DC gain, UGBW ~33.6 MHz, PM ~67.8 deg.
+  assert.ok(Math.abs(points[0].db - 55.73) < 0.05, `dc gain ${points[0].db}`);
+  const ugbw = unityGain(points)!;
+  assert.ok(Math.abs(ugbw.f / 1e6 - 33.57) < 1.5, `ugbw ${ugbw.f}`);
+  assert.ok(Math.abs(180 + ugbw.phase - 67.76) < 2, `pm ${180 + ugbw.phase}`);
+  assert.equal(nearest(points, 1)!.f, points[0].f);
+});

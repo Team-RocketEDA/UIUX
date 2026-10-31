@@ -2011,3 +2011,140 @@ body.resizing {
   font: 11px/1.5 var(--mono);
   overflow-wrap: anywhere;
 }
+
+/* ---------- plots ---------- */
+
+.plots-page .schematic-pickers {
+  margin-bottom: 14px;
+}
+
+.plot-panel {
+  padding: 14px 16px 8px;
+}
+
+.plot-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  min-height: 24px;
+  font-size: 12px;
+}
+
+.plot-legend i {
+  display: inline-block;
+  width: 14px;
+  height: 3px;
+  margin-right: 6px;
+  vertical-align: middle;
+  border-radius: 2px;
+}
+
+.plot-readout {
+  display: inline-flex;
+  gap: 10px;
+  margin-left: auto;
+  color: var(--text-soft);
+  font: 12px var(--mono);
+}
+
+.plot-readout b {
+  padding-left: 8px;
+  border-left: 3px solid;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.plot-title {
+  margin: 10px 0 2px;
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.plot {
+  display: block;
+  width: 100%;
+  height: auto;
+  overflow: visible;
+}
+
+.plot .grid {
+  stroke: var(--border);
+  stroke-width: 1;
+}
+
+.plot .zero {
+  stroke: var(--border-strong);
+  stroke-width: 1.2;
+}
+
+.plot .axis-label {
+  fill: var(--muted);
+  font: 10.5px var(--mono);
+}
+
+.plot .trace {
+  fill: none;
+  stroke-width: 2;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+}
+
+.plot .target line {
+  stroke: var(--text-soft);
+  stroke-width: 1;
+  stroke-dasharray: 4 4;
+}
+
+.plot .target text {
+  fill: var(--text-soft);
+  font: 10.5px var(--sans);
+}
+
+.plot .reading circle,
+.plot .crosshair circle {
+  stroke: var(--surface);
+  stroke-width: 2;
+}
+
+.plot .reading text {
+  fill: var(--text);
+  font: 600 11px var(--sans);
+}
+
+.plot .pm-span {
+  stroke: var(--text-soft);
+  stroke-width: 1;
+}
+
+.plot .crosshair line {
+  stroke: var(--muted);
+  stroke-width: 1;
+}
+
+.plot .hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.verdict-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 16px 14px;
+}
+
+.verdict-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.plot .target .target-name {
+  fill: var(--muted);
+  font: 10px var(--mono);
+}

@@ -62,6 +62,8 @@ export type Evidence = {
   source_dirty: boolean | null;
   sources: string[];
   log: string;
+  // Waveform files the run kept (ngspice ASCII rawfiles), e.g. results/engine-runs/<run_id>-ac.raw.
+  datasets?: { analysis: string; path: string }[];
 };
 
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {

@@ -23,8 +23,11 @@ Everything on screen is real; there is no sample data.
   stacked below, wires routed between rows, supplies and ground as symbols. Sizes like `W={40*L2*1e-6}` are
   evaluated from `.param`, so an edit by you or the assistant redraws with the new values. Hover a wire to trace its
   net; click a part for its model, sizes, connections and netlist line. Read-only: change the netlist to change it.
-- **Layout, plots, terminal:** honest empty states until the engine produces those views; the previous
-  sample-data viewers are in git history for when it does.
+- **Plots:** the frequency response (gain and phase on one frequency axis) from the AC sweep the engine keeps
+  with each run (`results/engine-runs/<run_id>-ac.raw`), with the targets from `constraints.yaml`, the 0 dB crossing
+  and phase margin marked, a hover readout, and an earlier run overlaid for before/after.
+- **Layout, terminal:** honest empty states until the engine produces those views; the previous sample-data viewers
+  are in git history for when it does.
 
 ## Getting started
 
@@ -78,7 +81,7 @@ Planned service boundaries:
 | Export | Project archive and verification report | Real |
 | Schematic viewer | Parts, nets, ports, sizes, subcircuits | Real, drawn from the project's netlists (`src/schematic/`, tests: `npm test`) |
 | Layout viewer | Geometry with layer controls | Empty state until a layout flow runs |
-| Plots | Waveforms and spectra | Empty state; runs record measurements, not waveforms yet |
+| Plots | Frequency response with targets, before/after overlay | Real, from the engine's AC sweep datasets (needs the engine's dataset change) |
 | Terminal | Python/tool jobs | Disabled until isolated, approved execution exists |
 
 ## Product boundaries

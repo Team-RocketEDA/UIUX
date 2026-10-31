@@ -13,6 +13,7 @@ import { RunConsole } from "./components/RunConsole";
 import { Sidebar } from "./components/Sidebar";
 import { SourceSurface } from "./components/SourceSurface";
 import { ResizeHandle } from "./components/ui";
+import { PlotsView } from "./components/PlotsView";
 import { SchematicView } from "./components/SchematicView";
 import { ChecksView, ConstraintsView, EmptyView, ExportView, OverviewView, verificationReport } from "./components/WorkspaceViews";
 
@@ -336,6 +337,16 @@ export function App() {
             readFile={async (path) => (await api.readFile(path)).content}
             onOpenFile={(path) => void openFile(path)}
             onAsk={openAssistant}
+          />
+        );
+      case "plots":
+        return (
+          <PlotsView
+            evidence={evidence}
+            constraints={project.constraints}
+            running={running}
+            readFile={async (path) => (await api.readFile(path)).content}
+            onRunChecks={() => void runChecks()}
           />
         );
       case "constraints":
