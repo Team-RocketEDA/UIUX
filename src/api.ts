@@ -46,7 +46,7 @@ export type ProjectSummary = {
   agent: { state: "starting" | "ready" | "error" | "stopped"; error?: string };
 };
 
-export type FileEntry = { path: string; size: number; readOnly: boolean };
+export type FileEntry = { path: string; size: number; modified: number; readOnly: boolean };
 
 export type Measurement = { name: string; value: number; unit: string; target: { min?: number; max?: number }; margin: number; status: "pass" | "fail" };
 

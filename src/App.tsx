@@ -13,6 +13,7 @@ import { RunConsole } from "./components/RunConsole";
 import { Sidebar } from "./components/Sidebar";
 import { SourceSurface } from "./components/SourceSurface";
 import { ResizeHandle } from "./components/ui";
+import { SchematicView } from "./components/SchematicView";
 import { ChecksView, ConstraintsView, EmptyView, ExportView, OverviewView, verificationReport } from "./components/WorkspaceViews";
 
 const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
@@ -325,6 +326,16 @@ export function App() {
             onRunChecks={() => void runChecks()}
             onOpenAssistant={openAssistant}
             tools={status?.tools ?? {}}
+          />
+        );
+      case "schematic":
+        return (
+          <SchematicView
+            paths={entries.map((entry) => entry.path)}
+            revision={entries.map((entry) => entry.modified).join(",")}
+            readFile={async (path) => (await api.readFile(path)).content}
+            onOpenFile={(path) => void openFile(path)}
+            onAsk={openAssistant}
           />
         );
       case "constraints":

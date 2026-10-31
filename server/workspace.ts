@@ -87,13 +87,18 @@ function isReadOnly(rel: string) {
   return READ_ONLY_TOP.has(rel.split("/")[0]) || READ_ONLY_FILES.has(rel);
 }
 
-function listFiles(dir: string, base = ""): { path: string; size: number; readOnly: boolean }[] {
-  const out: { path: string; size: number; readOnly: boolean }[] = [];
+type Listed = { path: string; size: number; modified: number; readOnly: boolean };
+
+function listFiles(dir: string, base = ""): Listed[] {
+  const out: Listed[] = [];
   for (const entry of readdirSync(path.join(dir, base), { withFileTypes: true })) {
     if (HIDDEN.has(entry.name) || entry.name === ".gitkeep") continue;
     const rel = base ? `${base}/${entry.name}` : entry.name;
     if (entry.isDirectory()) out.push(...listFiles(dir, rel));
-    else if (entry.isFile()) out.push({ path: rel, size: statSync(path.join(dir, rel)).size, readOnly: isReadOnly(rel) });
+    else if (entry.isFile()) {
+      const stat = statSync(path.join(dir, rel));
+      out.push({ path: rel, size: stat.size, modified: stat.mtimeMs, readOnly: isReadOnly(rel) });
+    }
   }
   return out.sort((a, b) => a.path.localeCompare(b.path));
 }
