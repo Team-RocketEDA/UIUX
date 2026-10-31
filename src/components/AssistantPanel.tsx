@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Constraints } from "../api";
-import type { Approval, ToolStep } from "../agent/fuel";
+import type { Approval, SessionView, ToolStep } from "../agent/fuel";
 import { applyUnifiedDiff, describeChanges, type CircuitChange, type Proposal } from "../schematic/changes";
 import { useAgent } from "../agent/useAgent";
 import type { SurfaceId } from "../types";
@@ -111,6 +111,112 @@ function diffLines(diff: string) {
     ));
 }
 
+const clock = (time: number) => new Date(time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+// Everything the assistant did in this session, newest first: approvals, tool calls, checks and files.
+function ActivityView({ view, onOpenFile, onShowChat }: { view: SessionView; onOpenFile: (path: string) => void; onShowChat: () => void }) {
+  const steps = [...view.steps].sort((a, b) => b.time - a.time);
+  const approvals = [...view.approvals].sort((a, b) => b.time - a.time);
+  const checks = Object.entries(view.checks);
+  if (!steps.length && !approvals.length && !checks.length) {
+    return (
+      <div className="assistant-body">
+        <p className="assistant-hint">Nothing yet. Tool calls, approvals, engine runs and the files the assistant changes appear here.</p>
+      </div>
+    );
+  }
+  return (
+    <div className="assistant-body activity">
+      {view.iteration && (
+        <section>
+          <span className="eyebrow">Repair iterations</span>
+          <p className={view.iteration.limitReached ? "limit" : ""}>
+            {view.iteration.used} of {view.iteration.limit ?? "?"} engine runs used{view.iteration.limitReached ? ". The limit is reached; the assistant stops here." : "."}
+          </p>
+        </section>
+      )}
+      {approvals.length > 0 && (
+        <section>
+          <span className="eyebrow">Approvals</span>
+          {approvals.map((approval) => (
+            <button key={approval.id} className="activity-row" onClick={approval.status === "pending" ? onShowChat : () => approval.files[0] && onOpenFile(shortPath(approval.files[0]))}>
+              <span className={`status-pill ${approval.status === "approved" ? "passed" : approval.status === "rejected" ? "failed" : "running"}`}>{approval.status}</span>
+              <span className="activity-text">{approval.label}{approval.files.length ? ` · ${approval.files.map(shortPath).join(", ")}` : ""}</span>
+              <time>{clock(approval.time)}</time>
+            </button>
+          ))}
+        </section>
+      )}
+      {checks.length > 0 && (
+        <section>
+          <span className="eyebrow">Checks reported</span>
+          {checks.map(([name, check]) => (
+            <div key={name} className="activity-row">
+              <span className={`status-pill ${check.status === "PASS" ? "passed" : check.status === "FAIL" ? "failed" : ""}`}>{check.status.replace("_", " ")}</span>
+              <span className="activity-text mono">{name}{check.measured !== undefined ? ` = ${check.measured}` : ""}{check.target ? ` (target ${check.target})` : ""}</span>
+            </div>
+          ))}
+        </section>
+      )}
+      {view.lastChanges.length > 0 && (
+        <section>
+          <span className="eyebrow">Files changed</span>
+          {view.lastChanges.map((file) => (
+            <button key={file} className="activity-row" onClick={() => onOpenFile(shortPath(file))}>
+              <Icon name="file" size={12} />
+              <span className="activity-text mono">{shortPath(file)}</span>
+            </button>
+          ))}
+        </section>
+      )}
+      {steps.length > 0 && (
+        <section>
+          <span className="eyebrow">Tool calls</span>
+          {steps.map((step) => (
+            <div key={step.id} className={`step ${step.status}`}>
+              <span className="step-mark">
+                {step.status === "completed" ? <Icon name="check" size={11} /> : step.status === "error" ? <Icon name="x" size={11} /> : <span className="spinner" />}
+              </span>
+              <span className="step-label">{step.label}</span>
+              <span className="step-detail">{stepDetail(step)}</span>
+              <time>{clock(step.time)}</time>
+            </div>
+          ))}
+        </section>
+      )}
+    </div>
+  );
+}
+
+function SettingsView({ rows, onEditConstraints, onEvidence }: { rows: [string, string][]; onEditConstraints: () => void; onEvidence: () => void }) {
+  return (
+    <div className="assistant-body settings">
+      <dl className="settings-list">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="settings-actions">
+        <button className="btn" onClick={onEditConstraints}>
+          <Icon name="sliders" size={13} />
+          Edit autonomy and limits
+        </button>
+        <button className="btn" onClick={onEvidence}>
+          <Icon name="verification" size={13} />
+          Open verification evidence
+        </button>
+      </div>
+      <p className="assistant-hint">
+        Autonomy and the repair limit live in constraints.yaml (agent.mode, agent.iteration_limit). The model and its key are set where
+        the agent runs (rocket_fuel/.env), never in this page.
+      </p>
+    </div>
+  );
+}
+
 type Suggestion = { icon: IconName; text: string };
 
 function suggestions(constraints: Constraints): Suggestion[] {
@@ -139,6 +245,7 @@ export function AssistantPanel({
   onNavigate,
   readFile,
   onProposal,
+  draft,
 }: {
   width: number;
   onClose: () => void;
@@ -148,12 +255,22 @@ export function AssistantPanel({
   onNavigate: (surface: SurfaceId) => void;
   readFile: (path: string) => Promise<string>;
   onProposal: (proposal?: Proposal) => void;
+  draft?: { text: string; id: number };
 }) {
   const agent = useAgent();
   const { view } = agent;
   const replay = agent.mode === "replay";
   const [input, setInput] = useState("");
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [tab, setTab] = useState<"chat" | "activity" | "settings">("chat");
+  const composerRef = useRef<HTMLTextAreaElement>(null);
+
+  // A request prepared elsewhere (e.g. an engine tool on the top bar): put it in the box to review and send.
+  useEffect(() => {
+    if (!draft) return;
+    setTab("chat");
+    setInput(draft.text);
+    composerRef.current?.focus();
+  }, [draft?.id]);
   const bodyRef = useRef<HTMLDivElement>(null);
 
   const approvals = view.approvals.filter((approval) => approval.status === "pending");
@@ -194,31 +311,35 @@ export function AssistantPanel({
         />
         {replay && <span className="replay-tag">REPLAY</span>}
         <div className="head-spacer" />
-        <div className="menu-anchor">
-          <button className="ghost-icon" onClick={() => setMenuOpen((open) => !open)} aria-label="Assistant settings" aria-expanded={menuOpen}>
-            <Icon name="more" size={16} />
-          </button>
-          {menuOpen && (
-            <div className="menu" role="menu">
-              <div className="menu-row"><span>Model</span><b>{model || "after first message"}</b></div>
-              <div className="menu-row"><span>Profile</span><b>{view.agent ?? (autonomy === "Auto" ? "rocket-auto" : "rocket-approval")}</b></div>
-              <div className="menu-row"><span>Repair limit</span><b>{limit} iterations</b></div>
-              <button className="menu-item" onClick={() => { setMenuOpen(false); onOpenFile("constraints.yaml"); }}>
-                Edit autonomy and limits
-              </button>
-              <button className="menu-item" onClick={() => { setMenuOpen(false); onNavigate("verification"); }}>
-                Open verification evidence
-              </button>
-              <p className="menu-note">The model and its key are set where the agent runs (rocket_fuel/.env), never in this page.</p>
-            </div>
-          )}
-        </div>
         <button className="ghost-icon" onClick={onClose} aria-label="Close assistant">
           <Icon name="close" size={15} />
         </button>
       </header>
+      <div className="assistant-tabs" role="tablist" aria-label="Assistant views">
+        {(["chat", "activity", "settings"] as const).map((id) => (
+          <button key={id} role="tab" aria-selected={tab === id} className={tab === id ? "active" : ""} onClick={() => setTab(id)}>
+            {id[0].toUpperCase() + id.slice(1)}
+            {id === "activity" && approvals.length > 0 && <i className="tab-dot" aria-label={`${approvals.length} waiting for approval`} />}
+          </button>
+        ))}
+      </div>
 
-      <div className="assistant-body" ref={bodyRef}>
+      {tab === "activity" && <ActivityView view={view} onOpenFile={onOpenFile} onShowChat={() => setTab("chat")} />}
+      {tab === "settings" && (
+        <SettingsView
+          rows={[
+            ["Connection", replay ? "Replay of a recorded session" : live ? "Connected" : agentState === "starting" ? "Starting" : "Not connected"],
+            ["Model", model || "known after the first answer"],
+            ["Profile", view.agent ?? (autonomy === "Auto" ? "rocket-auto" : "rocket-approval")],
+            ["Autonomy", autonomy === "Auto" ? "Auto: edits apply without asking" : "Approval: you approve each design edit"],
+            ["Repair limit", `${limit} engine runs per session (${used} used)`],
+          ]}
+          onEditConstraints={() => onOpenFile("constraints.yaml")}
+          onEvidence={() => onNavigate("verification")}
+        />
+      )}
+
+      <div className="assistant-body" ref={bodyRef} hidden={tab !== "chat"}>
         {replay && (
           <div className="notice warn">
             Replay of a recorded session{view.replay?.recordedAt ? ` from ${new Date(view.replay.recordedAt).toLocaleString()}` : ""}. Nothing here is running now.
@@ -320,6 +441,7 @@ export function AssistantPanel({
 
       <footer className="composer">
         <textarea
+          ref={composerRef}
           value={input}
           onChange={(event) => setInput(event.target.value)}
           onKeyDown={(event) => {

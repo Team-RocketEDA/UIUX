@@ -12,6 +12,9 @@ export type WorkspaceStatus = {
   project: string | null;
 };
 
+export type EngineTool = { name: string; available: boolean; needs: string };
+export type JobKind = { operation: string; tools: EngineTool[] };
+
 export type Template = { id: string; title: string; description: string };
 export type ProjectEntry = { name: string; title: string; description: string; modified: number };
 
@@ -40,11 +43,14 @@ export type Constraints = {
 export type ProjectSummary = {
   name: string;
   dir: string;
+  branch: string;
   revision: string;
   dirty: boolean;
   constraints: Constraints;
   agent: { state: "starting" | "ready" | "error" | "stopped"; error?: string };
 };
+
+export type Commit = { hash: string; author: string; date: string; subject: string };
 
 export type FileEntry = { path: string; size: number; modified: number; readOnly: boolean };
 
@@ -79,6 +85,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<WorkspaceStatus>("GET", "/api/status"),
+  engineJobs: () => request<JobKind[]>("GET", "/api/engine/jobs"),
   templates: () => request<Template[]>("GET", "/api/templates"),
   projects: () => request<ProjectEntry[]>("GET", "/api/projects"),
   createProject: (name: string, template: string) => request<{ name: string }>("POST", "/api/projects", { name, template }),
@@ -88,9 +95,18 @@ export const api = {
   files: () => request<FileEntry[]>("GET", "/api/project/files"),
   readFile: (path: string) => request<{ path: string; content: string; readOnly: boolean }>("GET", `/api/project/file?path=${encodeURIComponent(path)}`),
   saveFile: (path: string, content: string) => request<ProjectSummary>("PUT", "/api/project/file", { path, content }),
+  history: () => request<Commit[]>("GET", "/api/project/history"),
   evidence: () => request<Evidence[]>("GET", "/api/project/checks"),
   runChecks: () => request<{ run_id: string; state: string; verdict: Verdict }>("POST", "/api/project/checks/run"),
   exportUrl: "/api/project/export",
+  engineOperations: () => request<string[]>("GET", "/api/engine/operations"),
+  engineCall: (operation: string, args: Record<string, unknown>) => request<Record<string, unknown>>("POST", "/api/project/engine", { operation, args }),
+  rawFile: async (path: string) => {
+    const response = await fetch(`/api/project/raw?path=${encodeURIComponent(path)}`);
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Could not read ${path}`);
+    return response.arrayBuffer();
+  },
+  openInKlayout: (path: string) => request<{ ok: true }>("POST", "/api/project/open-in", { path }),
 };
 
 export type CheckRow = {
