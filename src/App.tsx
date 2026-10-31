@@ -1,44 +1,22 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import type {
-  ActiveView,
-  Check,
-  CheckStatus,
-  ConstraintSet,
-  Job,
-  ProjectFile,
-  SurfaceId,
-} from "./types";
-import {
-  initialChecks,
-  initialConstraints,
-  initialFiles,
-  initialRevision,
-  project,
-  toolRegistry,
-} from "./data";
-import { useAgent } from "./agent/useAgent";
-import { buildVerificationReport, downloadText } from "./utils";
+import { api, checkRows, type Evidence, type FileEntry, type ProjectSummary, type WorkspaceStatus } from "./api";
+import type { ActiveView, Job, ProjectFile, SurfaceId } from "./types";
 import { ActivityBar } from "./components/ActivityBar";
-import { AssistantPanel, type AssistantTab } from "./components/AssistantPanel";
-import { ConstraintsSurface } from "./components/ConstraintsSurface";
-import { ExportSurface } from "./components/ExportSurface";
+import { AssistantPanel } from "./components/AssistantPanel";
 import { Icon, type IconName } from "./components/icons";
-import { LayoutSurface } from "./components/LayoutSurface";
-import { OverviewSurface } from "./components/OverviewSurface";
-import { PlotsSurface } from "./components/PlotsSurface";
+import { ProjectPicker } from "./components/ProjectPicker";
 import { RunConsole } from "./components/RunConsole";
-import { SchematicSurface } from "./components/SchematicSurface";
 import { Sidebar } from "./components/Sidebar";
 import { SourceSurface } from "./components/SourceSurface";
-import { TerminalSurface } from "./components/TerminalSurface";
-import { Toolbelt } from "./components/Toolbelt";
-import { TopBar } from "./components/TopBar";
 import { ResizeHandle } from "./components/ui";
-import { VerificationSurface } from "./components/VerificationSurface";
+import { PlotsView } from "./components/PlotsView";
+import { SchematicView } from "./components/SchematicView";
+import type { Proposal } from "./schematic/changes";
+import { ChecksView, ConstraintsView, EmptyView, ExportView, OverviewView, verificationReport } from "./components/WorkspaceViews";
 
 const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
   overview: { label: "Overview", icon: "home" },
@@ -52,100 +30,74 @@ const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
 };
 
 const fillViews = new Set<SurfaceId>(["schematic", "layout", "terminal"]);
+const POLL_MS = 3000;
 
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
-const makeRevision = () => Math.random().toString(16).slice(2, 9);
+const LANGUAGES: Record<string, string> = { cir: "SPICE", sp: "SPICE", spice: "SPICE", yaml: "YAML", yml: "YAML", py: "Python", v: "Verilog", sv: "SystemVerilog", json: "JSON", md: "Markdown", log: "Log" };
 
-const GPIO_COMBINATIONAL = `  always_comb begin
-    readback = read_pending ? bus_data : gpio_in;
-  end`;
-
-const GPIO_REGISTERED = `  // Repaired: register readback to close the 125 MHz setup path.
-  always_ff @(posedge clk or negedge rst_n) begin
-    if (!rst_n) readback <= 8'h00;
-    else readback <= read_pending ? bus_data : gpio_in;
-  end`;
-
-const constraintsToYaml = (constraints: ConstraintSet) => `pdk: ${constraints.pdk}
-domains: [${constraints.domains.join(", ")}]
-
-targets:
-  supply_v: ${constraints.supplyV}
-  clock_mhz: ${constraints.clockMhz}
-  max_power_mw: ${constraints.maxPowerMw}
-  max_area_mm2: ${constraints.maxAreaMm2}
-  wavelength_nm: ${constraints.wavelengthNm}
-  extinction_db: ${constraints.extinctionDb}
-
-verification:
-  required:
-${constraints.requiredChecks.map((id) => `    - ${id}`).join("\n")}
-  max_iterations: ${constraints.maxIterations}
-  autonomy: ${constraints.autonomy}
-`;
+function toProjectFile(entry: FileEntry, content = ""): ProjectFile {
+  const top = entry.path.split("/")[0];
+  const kind: ProjectFile["kind"] =
+    top === "design" ? "source" : top === "tests" ? "test" : top === "results" ? "result" : top === "ip" ? "ip" : top === "workflows" ? "workflow" : "config";
+  const extension = entry.path.split(".").pop() ?? "";
+  return { path: entry.path, kind, language: LANGUAGES[extension] ?? "Text", content, readOnly: entry.readOnly };
+}
 
 export function App() {
-  const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
-  const [constraints, setConstraints] = useState<ConstraintSet>(initialConstraints);
-  const [checks, setChecks] = useState<Check[]>(initialChecks);
-  const [revision, setRevision] = useState(initialRevision);
-  const [iteration, setIteration] = useState(3);
-  const [timingFixed, setTimingFixed] = useState(false);
+  const [status, setStatus] = useState<WorkspaceStatus | null>(null);
+  const [project, setProject] = useState<ProjectSummary | null>(null);
+  const [checked, setChecked] = useState(false);
+  const [entries, setEntries] = useState<FileEntry[]>([]);
+  const [contents, setContents] = useState<Record<string, string>>({});
+  const [evidence, setEvidence] = useState<Evidence[]>([]);
 
-  const [surface, setSurface] = useState<SurfaceId>("overview");
-  const [view, setView] = useState<ActiveView>({ kind: "surface", id: "overview" });
-  const [openFiles, setOpenFiles] = useState<string[]>(["design/digital/top.sv"]);
+  // A #surface in the URL (e.g. #verification) opens that page directly.
+  const initialSurface = (Object.keys(surfaceMeta) as SurfaceId[]).find((id) => `#${id}` === window.location.hash) ?? "overview";
+  const [surface, setSurface] = useState<SurfaceId>(initialSurface);
+  const [view, setView] = useState<ActiveView>({ kind: "surface", id: initialSurface });
+  const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(244);
+  const [sidebarWidth, setSidebarWidth] = useState(232);
   const [assistantOpen, setAssistantOpen] = useState(true);
-  const [assistantWidth, setAssistantWidth] = useState(356);
-  const [assistantTab, setAssistantTab] = useState<AssistantTab>("chat");
+  const [assistantWidth, setAssistantWidth] = useState(400);
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleHeight, setConsoleHeight] = useState(196);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [running, setRunning] = useState(false);
+  // What the assistant's pending netlist change would do; the schematic highlights it.
+  const [proposal, setProposal] = useState<Proposal>();
 
   const [toast, setToast] = useState<string | null>(null);
   const viewRef = useRef<HTMLDivElement>(null);
-  const agent = useAgent();
 
-  // Map live/replay Rocket Fuel check verdicts onto workbench checks when present.
-  const liveCheckEntries = Object.entries(agent.view.checks);
-  const effectiveChecks: Check[] =
-    agent.mode !== "mock" && liveCheckEntries.length > 0
-      ? liveCheckEntries.map(([id, item]) => {
-          const statusMap: Record<string, CheckStatus> = {
-            PASS: "passed",
-            FAIL: "failed",
-            NOT_RUN: "not_run",
-            UNSUPPORTED: "unsupported",
-          };
-          return {
-            id,
-            name: id.replace(/^opamp\./, "Op-amp ").replace(/_/g, " "),
-            domain: "analog" as const,
-            tool: item.producer === "stub" ? "rocket_fuel (stub)" : "ngspice 44 / Rocket Engine",
-            target: item.target ?? "from constraints.yaml",
-            measured:
-              item.measured !== undefined
-                ? `${item.measured}${id.includes("gain") ? " dB" : id.includes("ugbw") ? " MHz" : id.includes("phase") ? "°" : ""}`
-                : item.status,
-            status: statusMap[item.status] ?? "not_run",
-            artifact: "design/opamp.cir",
-            log: `Producer: ${item.producer ?? "runner"} · margin: ${item.margin ?? "—"}`,
-            revision,
-            updated: "live stream",
-          };
-        })
-      : checks;
-  const effectiveIteration =
-    agent.mode !== "mock" && agent.view.iteration ? agent.view.iteration.used : iteration;
+  const notify = (message: string) => setToast(message);
+
+  useEffect(() => {
+    api.status().then(setStatus).catch(() => setStatus(null));
+    // The workspace server keeps the open project across page reloads.
+    api.project().then((open) => setProject(open)).catch(() => setProject(null)).finally(() => setChecked(true));
+  }, []);
+
+  const refresh = useCallback(async () => {
+    const [summary, files, runs] = await Promise.all([api.project(), api.files(), api.evidence()]);
+    setProject(summary);
+    setEntries(files);
+    setEvidence(runs);
+  }, []);
+
+  // The agent edits files and runs checks on its own, so keep the project view in step.
+  useEffect(() => {
+    if (!project) return;
+    void refresh().catch(() => undefined);
+    const timer = window.setInterval(() => void refresh().catch(() => undefined), POLL_MS);
+    return () => window.clearInterval(timer);
+  }, [project?.name, refresh]);
 
   useEffect(() => {
     viewRef.current?.scrollTo({ top: 0 });
@@ -157,17 +109,53 @@ export function App() {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
-  const notify = (message: string) => setToast(message);
+  const resetWorkspaceState = () => {
+    setEntries([]);
+    setContents({});
+    setEvidence([]);
+    setOpenFiles([]);
+    setDirtyFiles(new Set());
+    setJobs([]);
+    setActiveJobId(null);
+    setSurface("overview");
+    setView({ kind: "surface", id: "overview" });
+  };
+
+  const openProject = async (name: string) => {
+    try {
+      resetWorkspaceState();
+      setProject(await api.openProject(name));
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  const switchProject = async () => {
+    if (dirtyFiles.size && !window.confirm("Discard unsaved changes and switch project?")) return;
+    await api.closeProject().catch(() => undefined);
+    resetWorkspaceState();
+    setProject(null);
+  };
 
   const navigate = (nextSurface: SurfaceId) => {
     setSurface(nextSurface);
     setView({ kind: "surface", id: nextSurface });
+    window.history.replaceState(null, "", `#${nextSurface}`);
   };
 
-  const openFile = (path: string) => {
-    if (!files.some((file) => file.path === path)) {
-      notify(`${path} is a runner artifact and is not available as text in this build.`);
+  const openFile = async (path: string) => {
+    if (!entries.some((entry) => entry.path === path)) {
+      notify(`${path} is not in the project.`);
       return;
+    }
+    if (!(path in contents)) {
+      try {
+        const file = await api.readFile(path);
+        setContents((previous) => ({ ...previous, [path]: file.content }));
+      } catch (err) {
+        notify(err instanceof Error ? err.message : String(err));
+        return;
+      }
     }
     setOpenFiles((previous) => (previous.includes(path) ? previous : [...previous, path]));
     setView({ kind: "file", path });
@@ -181,361 +169,69 @@ export function App() {
   };
 
   const changeFile = (path: string, content: string) => {
-    setFiles((previous) =>
-      previous.map((file) => (file.path === path ? { ...file, content } : file)),
-    );
+    setContents((previous) => ({ ...previous, [path]: content }));
     setDirtyFiles((previous) => new Set(previous).add(path));
   };
 
-  const saveFile = (path: string) => {
-    setDirtyFiles((previous) => {
-      const next = new Set(previous);
-      next.delete(path);
-      return next;
-    });
-    setRevision(makeRevision());
-    notify(`${path} saved to the project working tree.`);
+  const saveFile = async (path: string) => {
+    try {
+      setProject(await api.saveFile(path, contents[path] ?? ""));
+      setDirtyFiles((previous) => {
+        const next = new Set(previous);
+        next.delete(path);
+        return next;
+      });
+      notify(`${path} saved and committed.`);
+      void refresh();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err));
+    }
   };
 
-  const startJob = (
-    title: string,
-    tool: string,
-    logs: string[],
-    outcome: Job["status"] = "passed",
-  ) => {
-    const id = `job-${Date.now()}-${Math.random().toString(16).slice(2, 6)}`;
-    const startedAt = new Date().toLocaleTimeString([], {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-    });
-    setJobs((previous) =>
-      [
-        {
-          id,
-          title,
-          tool,
-          status: "running" as const,
-          progress: 5,
-          logs: [],
-          startedAt,
-        },
-        ...previous,
-      ].slice(0, 10),
-    );
+  // Files the agent changed on disk: reload any open file without unsaved edits.
+  useEffect(() => {
+    for (const path of openFiles) {
+      if (dirtyFiles.has(path)) continue;
+      void api.readFile(path).then((file) =>
+        setContents((previous) => (previous[path] === file.content ? previous : { ...previous, [path]: file.content })),
+      ).catch(() => undefined);
+    }
+  }, [project?.revision, evidence.length]);
+
+  const runChecks = async () => {
+    if (running || !project) return;
+    const id = `job-${Date.now()}`;
+    const startedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    setRunning(true);
+    setJobs((previous) => [{ id, title: "Run checks", tool: "ngspice via Rocket Engine", status: "running" as const, progress: 10,
+      logs: [`$ run_spice ${(project.constraints.simulation?.sources ?? []).join(" ")}`], startedAt }, ...previous].slice(0, 10));
     setActiveJobId(id);
     setConsoleOpen(true);
-
-    logs.forEach((line, index) => {
-      window.setTimeout(() => {
-        setJobs((previous) =>
-          previous.map((job) =>
-            job.id === id
-              ? {
-                  ...job,
-                  logs: [...job.logs, line],
-                  progress: Math.round(((index + 1) / (logs.length + 1)) * 100),
-                }
-              : job,
-          ),
-        );
-      }, 240 * (index + 1));
-    });
-
-    window.setTimeout(() => {
-      setJobs((previous) =>
-        previous.map((job) =>
-          job.id === id
-            ? {
-                ...job,
-                status: outcome,
-                progress: 100,
-                logs: [
-                  ...job.logs,
-                  outcome === "passed" ? "✓ job completed" : "✕ job failed — inspect evidence",
-                ],
-              }
-            : job,
-        ),
-      );
-    }, 240 * (logs.length + 1));
-
-    return id;
-  };
-
-  const runTool = (toolId: string) => {
-    const tool = toolRegistry.find((item) => item.id === toolId);
-    if (!tool) return;
-    if (!tool.available) {
-      notify(`${tool.label} is unavailable: ${tool.unavailableReason}`);
-      return;
+    try {
+      const result = await api.runChecks();
+      const runs = await api.evidence();
+      setEvidence(runs);
+      const record = runs.find((run) => run.run_id === result.run_id);
+      const verdict = result.verdict;
+      const lines = [
+        ...(record?.log ? record.log.split("\n").slice(-40) : []),
+        ...(verdict.measurements ?? []).map((m) => `${m.name} = ${m.value.toFixed(3)} ${m.unit} (${m.status}, margin ${m.margin.toFixed(3)})`),
+        `verdict: ${verdict.status}${verdict.reason ? ` (${verdict.reason})` : ""} · run ${result.run_id}`,
+      ];
+      setJobs((previous) => previous.map((job) => (job.id === id
+        ? { ...job, status: verdict.status === "PASS" ? "passed" as const : "failed" as const, progress: 100, logs: [...job.logs, ...lines] }
+        : job)));
+      notify(`Checks finished: ${verdict.status.replace("_", " ")}.`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setJobs((previous) => previous.map((job) => (job.id === id ? { ...job, status: "failed" as const, progress: 100, logs: [...job.logs, message] } : job)));
+      notify(message);
+    } finally {
+      setRunning(false);
     }
-    const outcome = toolId === "opensta" && !timingFixed ? "failed" : "passed";
-    startJob(`${tool.label} run`, tool.label, tool.logs, outcome);
-    notify(`${tool.label} queued through the local runner.`);
   };
 
-  const runScript = (script: string) => {
-    startJob(
-      "Python project script",
-      "Python 3.12",
-      [
-        "Resolved project context: rocket-demo",
-        "Loaded IP registry and tool adapters",
-        `python -c ${script.length > 100 ? `${script.slice(0, 100)}…` : script}`,
-        "UI-simulated runner: job completed; native execution stays behind the adapter",
-      ],
-      "passed",
-    );
-    notify("Python job queued through the shared runner interface.");
-  };
-
-  const runChecks = () => {
-    if (checks.some((check) => check.status === "running")) return;
-    const unsupportedCount = checks.filter((check) => check.status === "unsupported").length;
-    const willFail = !timingFixed;
-
-    setChecks((previous) =>
-      previous.map((check) =>
-        check.status === "unsupported"
-          ? check
-          : { ...check, status: "running" as const, updated: "running now" },
-      ),
-    );
-
-    startJob(
-      "Run supported verification gates",
-      "runner",
-      [
-        "Loaded constraints.yaml and pinned workflow revisions",
-        "Verilator: 128 / 128 functional tests passed",
-        `LibreLane: routed design reused at revision ${revision}`,
-        willFail
-          ? "OpenSTA: WNS −1.12 ns at 125 MHz (VIOLATED)"
-          : "OpenSTA: WNS +0.32 ns at 125 MHz (MET)",
-        "ngspice and SAX evidence refreshed from stored simulations",
-        "DRC/LVS and power not run: unavailable in this runner",
-      ],
-      willFail ? "failed" : "passed",
-    );
-
-    notify("Supported checks queued. Unsupported gates will remain unsupported.");
-
-    window.setTimeout(() => {
-      setChecks((previous) =>
-        previous.map((check) => {
-          if (check.status === "unsupported") return check;
-          if (check.id === "static-timing") {
-            return timingFixed
-              ? {
-                  ...check,
-                  status: "passed" as const,
-                  measured: "+0.32 ns (7.68 ns path)",
-                  updated: "just now",
-                }
-              : {
-                  ...check,
-                  status: "failed" as const,
-                  measured: "−1.12 ns (9.12 ns critical path)",
-                  updated: "just now",
-                };
-          }
-          return { ...check, status: "passed" as const, updated: "just now" };
-        }),
-      );
-      notify(
-        willFail
-          ? `Checks finished: timing still fails · ${unsupportedCount} unsupported.`
-          : `Checks finished: all supported gates pass · ${unsupportedCount} unsupported.`,
-      );
-    }, 2500);
-  };
-
-  const applyTimingRepair = (): boolean => {
-    if (timingFixed) return false;
-    if (iteration >= constraints.maxIterations) {
-      notify("Repair limit reached. Raise the iteration limit or adjust the constraints.");
-      return false;
-    }
-    if (dirtyFiles.has("design/digital/gpio.sv")) {
-      notify("Resolve unsaved edits in design/digital/gpio.sv before the agent can rewrite it.");
-      return false;
-    }
-
-    const gpioFile = files.find((file) => file.path === "design/digital/gpio.sv");
-    if (!gpioFile || !gpioFile.content.includes(GPIO_COMBINATIONAL)) {
-      notify("design/digital/gpio.sv changed from the expected baseline. Re-read the file first.");
-      return false;
-    }
-
-    const nextRevision = makeRevision();
-    setTimingFixed(true);
-    setIteration((previous) => previous + 1);
-    setRevision(nextRevision);
-    setFiles((previous) =>
-      previous.map((file) => {
-        if (file.path === "design/digital/gpio.sv") {
-          return {
-            ...file,
-            content: file.content.replace(GPIO_COMBINATIONAL, GPIO_REGISTERED),
-          };
-        }
-        if (file.path === "results/timing.rpt") {
-          return {
-            ...file,
-            content: `OpenSTA 2.6.0 -- sky130_fd_sc_hd__tt_025C_1v80
-Revision: ${nextRevision}
-
-Startpoint: u_gpio.readback[7] (registered)
-Endpoint:   u_core.irq
-Path group: clk
-Path type:   max
-
-  data arrival time   7.68 ns
-  data required time  8.00 ns
-  slack              +0.32 ns  MET
-
-WNS +0.32 ns
-TNS  0.00 ns
-`,
-          };
-        }
-        return file;
-      }),
-    );
-
-    setChecks((previous) =>
-      previous.map((check) =>
-        check.id === "static-timing"
-          ? {
-              ...check,
-              status: "running" as const,
-              measured: "Rerunning after repair",
-              updated: "running now",
-              revision: nextRevision,
-            }
-          : check,
-      ),
-    );
-
-    startJob(
-      "Agent repair: close GPIO setup path",
-      "Verilator → OpenSTA",
-      [
-        "Read results/timing.rpt at revision 8f3c1a2",
-        "Edited design/digital/gpio.sv: registered the readback path",
-        "Verilator: 128 / 128 tests passed",
-        "OpenSTA: WNS +0.32 ns at 125 MHz",
-        "Wrote results/timing.rpt for the repaired revision",
-      ],
-      "passed",
-    );
-
-    window.setTimeout(() => {
-      setChecks((previous) =>
-        previous.map((check) =>
-          check.id === "static-timing"
-            ? {
-                ...check,
-                status: "passed" as const,
-                measured: "+0.32 ns (7.68 ns path)",
-                updated: "just now",
-                revision: nextRevision,
-                log: "Registered readback closed the setup path. WNS +0.32 ns at 125 MHz.",
-              }
-            : check,
-        ),
-      );
-    }, 1800);
-
-    notify("Agent repair applied. Timing now passes at 125 MHz.");
-    return true;
-  };
-
-  const saveConstraints = (next: ConstraintSet) => {
-    setConstraints(next);
-    setFiles((previous) =>
-      previous.map((file) =>
-        file.path === "constraints.yaml"
-          ? { ...file, content: constraintsToYaml(next) }
-          : file,
-      ),
-    );
-    setRevision(makeRevision());
-    notify("constraints.yaml saved. Targets and gates are now explicit for the agent and runner.");
-  };
-
-  const exportReport = () => {
-    downloadText(
-      `verification-${revision}.md`,
-      buildVerificationReport(checks, constraints, revision, project.name),
-    );
-    notify("Verification report downloaded.");
-  };
-
-  const openAssistant = (tab: AssistantTab = "chat") => {
-    setAssistantOpen(true);
-    setAssistantTab(tab);
-  };
-
-  useEffect(() => {
-    const surfaceOrder: SurfaceId[] = [
-      "overview",
-      "schematic",
-      "layout",
-      "constraints",
-      "verification",
-      "plots",
-      "terminal",
-      "export",
-    ];
-    const onKeyDown = (event: globalThis.KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      const isInput =
-        target &&
-        (target.tagName === "INPUT" ||
-          target.tagName === "TEXTAREA" ||
-          target.tagName === "SELECT" ||
-          target.isContentEditable);
-
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "b") {
-        event.preventDefault();
-        setSidebarOpen((open) => !open);
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "j") {
-        event.preventDefault();
-        setConsoleOpen((open) => !open);
-        return;
-      }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "i") {
-        event.preventDefault();
-        setAssistantOpen((open) => !open);
-        return;
-      }
-      if (event.key === "Escape" && shortcutsOpen) {
-        event.preventDefault();
-        setShortcutsOpen(false);
-        return;
-      }
-      if (isInput || event.metaKey || event.ctrlKey || event.altKey) return;
-
-      if (event.key === "?") {
-        event.preventDefault();
-        setShortcutsOpen((open) => !open);
-        return;
-      }
-      const digit = Number(event.key);
-      if (digit >= 1 && digit <= 8) {
-        event.preventDefault();
-        const nextSurface = surfaceOrder[digit - 1];
-        setSurface(nextSurface);
-        setView({ kind: "surface", id: nextSurface });
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [shortcutsOpen]);
+  const openAssistant = () => setAssistantOpen(true);
 
   const startResize =
     (target: "sidebar" | "assistant" | "console") => (event: ReactPointerEvent) => {
@@ -550,7 +246,7 @@ TNS  0.00 ns
         if (target === "sidebar") {
           setSidebarWidth(clamp(startSidebar + moveEvent.clientX - startX, 196, 340));
         } else if (target === "assistant") {
-          setAssistantWidth(clamp(startAssistant - (moveEvent.clientX - startX), 300, 520));
+          setAssistantWidth(clamp(startAssistant - (moveEvent.clientX - startX), 320, 640));
         } else {
           setConsoleHeight(clamp(startConsole - (moveEvent.clientY - startY), 120, 420));
         }
@@ -580,7 +276,7 @@ TNS  0.00 ns
         if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
         event.preventDefault();
         setAssistantWidth((width) =>
-          clamp(width + (event.key === "ArrowLeft" ? step : -step), 300, 520),
+          clamp(width + (event.key === "ArrowLeft" ? step : -step), 320, 640),
         );
       } else {
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -590,23 +286,25 @@ TNS  0.00 ns
         );
       }
     };
+  if (!checked) return <main className="picker-shell" />;
+  if (!project) return <ProjectPicker onOpen={(name) => void openProject(name)} />;
 
+  const files = entries.map((entry) => toProjectFile(entry, contents[entry.path]));
   const activeFile = view.kind === "file" ? files.find((file) => file.path === view.path) : null;
-  const failed = effectiveChecks.filter((check) => check.status === "failed").length;
-  const unsupported = effectiveChecks.filter(
-    (check) => check.status === "unsupported" || check.status === "not_run",
-  ).length;
+  const rows = checkRows(project.constraints, evidence, project.revision);
+  const issues = rows.filter((row) => row.status === "FAIL" || row.status === "NOT_RUN").length;
   const runningJobs = jobs.filter((job) => job.status === "running").length;
   const isFill = view.kind === "file" || fillViews.has(surface);
+  const exportReport = () => verificationReport(project, evidence);
 
   const renderSurface = () => {
     if (view.kind === "file") {
-      if (!activeFile) {
+      if (!activeFile || !(activeFile.path in contents)) {
         return (
           <div className="empty-state page-surface">
             <Icon name="file" size={24} />
             <b>File not available</b>
-            <span>Open another project file from the explorer.</span>
+            <span>It may have been removed. Open another project file from the explorer.</span>
           </div>
         );
       }
@@ -616,7 +314,7 @@ TNS  0.00 ns
           file={activeFile}
           dirty={dirtyFiles.has(activeFile.path)}
           onChange={(content) => changeFile(activeFile.path, content)}
-          onSave={() => saveFile(activeFile.path)}
+          onSave={() => void saveFile(activeFile.path)}
         />
       );
     }
@@ -624,278 +322,177 @@ TNS  0.00 ns
     switch (surface) {
       case "overview":
         return (
-          <OverviewSurface
-            checks={effectiveChecks}
-            constraints={constraints}
-            iteration={effectiveIteration}
-            tools={toolRegistry}
+          <OverviewView
+            project={project}
+            evidence={evidence}
+            running={running}
             onNavigate={navigate}
-            onOpenFile={openFile}
-            onRunChecks={runChecks}
-            onOpenAssistant={() => openAssistant("chat")}
+            onRunChecks={() => void runChecks()}
+            onOpenAssistant={openAssistant}
+            tools={status?.tools ?? {}}
           />
         );
       case "schematic":
-        return <SchematicSurface onOpenFile={openFile} notify={notify} />;
-      case "layout":
-        return <LayoutSurface onOpenFile={openFile} onRunTool={runTool} />;
-      case "constraints":
         return (
-          <ConstraintsSurface
-            constraints={constraints}
-            checks={effectiveChecks}
-            onSave={saveConstraints}
-            onOpenFile={openFile}
-          />
-        );
-      case "verification":
-        return (
-          <VerificationSurface
-            checks={effectiveChecks}
-            constraints={constraints}
-            iteration={effectiveIteration}
-            onRunChecks={runChecks}
-            onExportReport={exportReport}
-            onOpenFile={openFile}
+          <SchematicView
+            paths={entries.map((entry) => entry.path)}
+            revision={entries.map((entry) => entry.modified).join(",")}
+            readFile={async (path) => (await api.readFile(path)).content}
+            onOpenFile={(path) => void openFile(path)}
+            onAsk={openAssistant}
+            proposal={proposal}
           />
         );
       case "plots":
-        return <PlotsSurface checks={checks} onOpenFile={openFile} />;
-      case "terminal":
         return (
-          <TerminalSurface
-            checks={checks}
-            constraints={constraints}
-            tools={toolRegistry}
-            onRunTool={runTool}
-            onRunScript={runScript}
+          <PlotsView
+            evidence={evidence}
+            constraints={project.constraints}
+            running={running}
+            readFile={async (path) => (await api.readFile(path)).content}
+            onRunChecks={() => void runChecks()}
           />
+        );
+      case "constraints":
+        return <ConstraintsView project={project} onOpenFile={(path) => void openFile(path)} />;
+      case "verification":
+        return (
+          <ChecksView project={project} evidence={evidence} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport} />
         );
       case "export":
-        return (
-          <ExportSurface
-            files={files}
-            checks={checks}
-            constraints={constraints}
-            revision={revision}
-            onOpenFile={openFile}
-            notify={notify}
-          />
-        );
+        return <ExportView project={project} evidence={evidence} onExportReport={exportReport} />;
       default:
-        return null;
+        return <EmptyView surface={surface} />;
     }
   };
 
   return (
     <main className="app-shell">
-      <TopBar
-        revision={revision}
-        runningJobs={runningJobs}
-        agentMode={agent.mode}
-        agentConnected={agent.connected}
-        onExport={() => navigate("export")}
-        onOpenShortcuts={() => setShortcutsOpen(true)}
-      />
-      <Toolbelt
-        tools={toolRegistry}
-        onRunTool={runTool}
-        onToggleConsole={() => setConsoleOpen((open) => !open)}
-        consoleOpen={consoleOpen}
-        onToggleAssistant={() => setAssistantOpen((open) => !open)}
+      <ActivityBar
+        surface={view.kind === "surface" ? surface : null}
+        onNavigate={navigate}
+        explorerOpen={sidebarOpen}
+        onToggleExplorer={() => setSidebarOpen((open) => !open)}
         assistantOpen={assistantOpen}
+        onToggleAssistant={() => setAssistantOpen((open) => !open)}
+        onSwitchProject={() => void switchProject()}
+        issues={issues}
       />
 
-      <div className="workspace">
-        <ActivityBar
-          surface={surface}
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((open) => !open)}
-          onNavigate={navigate}
-          assistantOpen={assistantOpen}
-          onOpenAssistant={openAssistant}
-        />
-
-        <Sidebar
-          files={files}
-          dirtyFiles={dirtyFiles}
-          openFilePath={view.kind === "file" ? view.path : null}
-          surface={surface}
-          issueCount={failed + unsupported}
-          onNavigate={navigate}
-          onOpenFile={openFile}
-          pdk={constraints.pdk}
-          domains={constraints.domains}
-          width={sidebarWidth}
-          hidden={!sidebarOpen}
-        />
-
-        {sidebarOpen && (
+      {sidebarOpen && (
+        <>
+          <Sidebar
+            projectName={project.name}
+            revision={project.revision}
+            files={files}
+            dirtyFiles={dirtyFiles}
+            openFilePath={view.kind === "file" ? view.path : null}
+            onOpenFile={(path) => void openFile(path)}
+            width={sidebarWidth}
+          />
           <ResizeHandle
             orientation="column"
-            label="Resize project sidebar"
+            label="Resize files"
             onPointerDown={startResize("sidebar")}
             onKeyDown={resizeWithKeyboard("sidebar")}
           />
-        )}
+        </>
+      )}
 
-        <section className="content">
-          <div className="tabstrip" role="tablist" aria-label="Open views">
+      <section className="main">
+        <header className="main-head">
+          <div className="tabs" role="tablist" aria-label="Open views">
             <button
-              className={`editor-tab surface-tab ${view.kind === "surface" ? "active" : ""}`}
+              className={`tab ${view.kind === "surface" ? "active" : ""}`}
               role="tab"
               aria-selected={view.kind === "surface"}
               onClick={() => setView({ kind: "surface", id: surface })}
             >
               <Icon name={surfaceMeta[surface].icon} size={13} />
-              <span>{surfaceMeta[surface].label}</span>
+              {surfaceMeta[surface].label}
             </button>
-
             {openFiles.map((path) => {
               const file = files.find((item) => item.path === path);
               const isActive = view.kind === "file" && view.path === path;
               return (
-                <div className={`editor-tab file-tab ${isActive ? "active" : ""}`} key={path}>
-                  <button
-                    className="file-tab-main"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setView({ kind: "file", path })}
-                    title={path}
-                  >
+                <span className={`tab file ${isActive ? "active" : ""}`} key={path}>
+                  <button role="tab" aria-selected={isActive} onClick={() => setView({ kind: "file", path })} title={path}>
                     <Icon name={file?.readOnly ? "lock" : "file"} size={12} />
-                    <span>{path.split("/").pop()}</span>
+                    {path.split("/").pop()}
                     {dirtyFiles.has(path) && <i className="dirty-dot" />}
                   </button>
                   <button
                     className="tab-close"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      closeFile(path);
-                    }}
+                    onClick={() => closeFile(path)}
                     aria-label={`Close ${path}`}
                     title={`Close ${path}`}
                   >
                     <Icon name="close" size={11} />
                   </button>
-                </div>
+                </span>
               );
             })}
-
-            <div className="tabstrip-spacer" />
-            <span className="tabstrip-meta">
-              <span className="status-dot passed" />
-              {revision}
-            </span>
           </div>
+          <span className="rev" title="Git revision of the project">
+            <span className={`dot ${project.dirty ? "amber" : "green"}`} />
+            {project.revision || "no commits"}
+          </span>
+          <button className={`ghost-icon ${consoleOpen ? "on" : ""}`} onClick={() => setConsoleOpen((open) => !open)} title="Run console" aria-label="Toggle run console">
+            <Icon name="terminal" size={15} />
+            {runningJobs > 0 && <i className="running-dot" />}
+          </button>
+        </header>
 
-          <div className={`view ${isFill ? "view-fill" : ""}`} ref={viewRef}>
-            {renderSurface()}
-          </div>
+        <div className={`view ${isFill ? "view-fill" : ""}`} ref={viewRef}>
+          {renderSurface()}
+        </div>
 
-          {consoleOpen && (
-            <ResizeHandle
-              orientation="row"
-              label="Resize run console"
-              onPointerDown={startResize("console")}
-              onKeyDown={resizeWithKeyboard("console")}
-            />
-          )}
-          <RunConsole
-            jobs={jobs}
-            activeJobId={activeJobId}
-            open={consoleOpen}
-            height={consoleHeight}
-            onSelectJob={setActiveJobId}
-            onClear={() => {
-              setJobs([]);
-              setActiveJobId(null);
-            }}
-            onToggle={() => setConsoleOpen((open) => !open)}
+        {consoleOpen && (
+          <ResizeHandle
+            orientation="row"
+            label="Resize run console"
+            onPointerDown={startResize("console")}
+            onKeyDown={resizeWithKeyboard("console")}
           />
-        </section>
+        )}
+        <RunConsole
+          jobs={jobs}
+          activeJobId={activeJobId}
+          open={consoleOpen}
+          height={consoleHeight}
+          onSelectJob={setActiveJobId}
+          onClear={() => {
+            setJobs([]);
+            setActiveJobId(null);
+          }}
+          onToggle={() => setConsoleOpen((open) => !open)}
+        />
+      </section>
 
-        {assistantOpen && (
+      {assistantOpen && (
+        <>
           <ResizeHandle
             orientation="column"
-            label="Resize assistant panel"
+            label="Resize assistant"
             onPointerDown={startResize("assistant")}
             onKeyDown={resizeWithKeyboard("assistant")}
           />
-        )}
-
-        <AssistantPanel
-          width={assistantWidth}
-          tab={assistantTab}
-          onTabChange={setAssistantTab}
-          onClose={() => setAssistantOpen(false)}
-          hidden={!assistantOpen}
-          constraints={constraints}
-          iteration={effectiveIteration}
-          checks={effectiveChecks}
-          timingFixed={timingFixed}
-          onApplyTimingRepair={applyTimingRepair}
-          onRunChecks={runChecks}
-          onOpenFile={openFile}
-          onNavigate={navigate}
-          notify={notify}
-          agent={agent}
-        />
-      </div>
-
-      {shortcutsOpen && (
-        <div
-          className="modal-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label="Keyboard shortcuts"
-          onClick={() => setShortcutsOpen(false)}
-        >
-          <div className="shortcuts-modal" onClick={(event) => event.stopPropagation()}>
-            <div className="shortcuts-header">
-              <div>
-                <span className="eyebrow">KICAD-STYLE WORKBENCH NAVIGATION</span>
-                <h2>Keyboard shortcuts</h2>
-              </div>
-              <button
-                className="icon-button"
-                onClick={() => setShortcutsOpen(false)}
-                aria-label="Close keyboard shortcuts"
-              >
-                <Icon name="close" size={15} />
-              </button>
-            </div>
-            <div className="shortcuts-grid">
-              <div>
-                <span className="eyebrow">SURFACES</span>
-                <div className="shortcut-row"><span>Overview</span><kbd>1</kbd></div>
-                <div className="shortcut-row"><span>Schematic & Symbol Editor</span><kbd>2</kbd></div>
-                <div className="shortcut-row"><span>Layout Viewer (KLayout)</span><kbd>3</kbd></div>
-                <div className="shortcut-row"><span>Constraints (YAML)</span><kbd>4</kbd></div>
-                <div className="shortcut-row"><span>Verification & Evidence</span><kbd>5</kbd></div>
-                <div className="shortcut-row"><span>Waveforms & Spectra</span><kbd>6</kbd></div>
-                <div className="shortcut-row"><span>Python / Tool Terminal</span><kbd>7</kbd></div>
-                <div className="shortcut-row"><span>Deliverables & Export</span><kbd>8</kbd></div>
-              </div>
-              <div>
-                <span className="eyebrow">PANELS & CANVAS</span>
-                <div className="shortcut-row"><span>Toggle Project Explorer</span><kbd>⌘ / Ctrl + B</kbd></div>
-                <div className="shortcut-row"><span>Toggle Run Console</span><kbd>⌘ / Ctrl + J</kbd></div>
-                <div className="shortcut-row"><span>Toggle AI Assistant</span><kbd>⌘ / Ctrl + I</kbd></div>
-                <div className="shortcut-row"><span>Save Active Source File</span><kbd>⌘ / Ctrl + S</kbd></div>
-                <div className="shortcut-row"><span>Send Prompt to Rocket Fuel</span><kbd>⌘ / Ctrl + ↵</kbd></div>
-                <div className="shortcut-row"><span>Pan Schematic / Layout</span><kbd>Drag Canvas</kbd></div>
-                <div className="shortcut-row"><span>Zoom Schematic / Layout</span><kbd>Mouse Wheel</kbd></div>
-                <div className="shortcut-row"><span>Show / Hide This Guide</span><kbd>?</kbd></div>
-              </div>
-            </div>
-          </div>
-        </div>
+          <AssistantPanel
+            key={project.name}
+            width={assistantWidth}
+            onClose={() => setAssistantOpen(false)}
+            constraints={project.constraints}
+            agentState={project.agent.state}
+            onOpenFile={(path) => void openFile(path)}
+            onNavigate={navigate}
+            readFile={async (path) => (await api.readFile(path)).content}
+            onProposal={setProposal}
+          />
+        </>
       )}
 
       {toast && (
         <div className="toast" role="status">
-          <Icon name="check" size={14} />
           {toast}
         </div>
       )}

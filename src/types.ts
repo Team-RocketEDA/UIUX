@@ -1,4 +1,4 @@
-export type CheckStatus = "passed" | "failed" | "running" | "not_run" | "unsupported" | "skipped";
+export type CheckStatus = "passed" | "failed" | "running" | "unsupported" | "skipped";
 
 export type Domain = "digital" | "analog" | "photonic";
 
@@ -13,34 +13,6 @@ export type ToolDefinition = {
   available: boolean;
   unavailableReason?: string;
   logs: string[];
-};
-
-export type Check = {
-  id: string;
-  name: string;
-  domain: Domain;
-  tool: string;
-  target: string;
-  measured: string;
-  status: CheckStatus;
-  artifact: string;
-  log: string;
-  revision: string;
-  updated: string;
-};
-
-export type ConstraintSet = {
-  pdk: string;
-  domains: Domain[];
-  supplyV: string;
-  clockMhz: string;
-  maxPowerMw: string;
-  maxAreaMm2: string;
-  wavelengthNm: string;
-  extinctionDb: string;
-  maxIterations: number;
-  autonomy: "auto" | "approve";
-  requiredChecks: string[];
 };
 
 export type ProjectFile = {
@@ -72,80 +44,3 @@ export type SurfaceId =
   | "export";
 
 export type ActiveView = { kind: "surface"; id: SurfaceId } | { kind: "file"; path: string };
-
-export type SchematicPort = {
-  name: string;
-  side: "left" | "right" | "top" | "bottom";
-  offset: number;
-};
-
-export type SchematicSymbolKind =
-  | "block"
-  | "nmos"
-  | "pmos"
-  | "capacitor"
-  | "resistor"
-  | "isource"
-  | "opamp"
-  | "dff"
-  | "mzi";
-
-export type SymbolPin = {
-  number: string;
-  name: string;
-  side: "left" | "right" | "top" | "bottom";
-  electricalType: "input" | "output" | "power" | "passive" | "bidirectional";
-  offset: number;
-};
-
-export type CircuitSymbolDef = {
-  id: string;
-  name: string;
-  referencePrefix: string;
-  domain: Domain;
-  shape: Exclude<SchematicSymbolKind, "block">;
-  pdkCell: string;
-  description: string;
-  defaultParams: { name: string; value: string }[];
-  pins: SymbolPin[];
-};
-
-export type SchematicInstance = {
-  id: string;
-  label: string;
-  block: string;
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-  tone: "blue" | "green" | "purple" | "amber";
-  badge: "IP" | "SHEET" | "MACRO";
-  sheet?: string;
-  symbol?: SchematicSymbolKind;
-  sourceFile?: string;
-  params: { name: string; value: string }[];
-  ports: SchematicPort[];
-};
-
-export type SchematicWire = {
-  points: [number, number][];
-  label?: string;
-  dashed?: boolean;
-};
-
-export type SchematicBoundaryPort = {
-  name: string;
-  x: number;
-  y: number;
-  side: "left" | "right";
-};
-
-export type SchematicSheet = {
-  id: string;
-  name: string;
-  path: string;
-  instances: SchematicInstance[];
-  wires: SchematicWire[];
-  boundaryPorts: SchematicBoundaryPort[];
-  note: string;
-};

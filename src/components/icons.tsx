@@ -28,6 +28,10 @@ export type IconName =
   | "zoomOut"
   | "fit"
   | "external"
+  | "arrowUp"
+  | "stop"
+  | "more"
+  | "bulb"
   | "save"
   | "download"
   | "check"
@@ -185,6 +189,16 @@ const icons: Record<IconName, ReactNode> = {
     </>
   ),
   check: <path d="m3 8 3 3 7-7" />,
+  arrowUp: <path d="M8 13V3M4 7l4-4 4 4" />,
+  stop: <rect x="4.5" y="4.5" width="7" height="7" rx="1.2" fill="currentColor" stroke="none" />,
+  more: (
+    <>
+      <circle cx="8" cy="3.5" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="8" r="0.9" fill="currentColor" stroke="none" />
+      <circle cx="8" cy="12.5" r="0.9" fill="currentColor" stroke="none" />
+    </>
+  ),
+  bulb: <path d="M6 13h4M6.5 11h3c0-1.6 2.5-2.4 2.5-5a4 4 0 0 0-8 0c0 2.6 2.5 3.4 2.5 5Z" />,
   x: <path d="m4 4 8 8M12 4l-8 8" />,
   lock: (
     <>

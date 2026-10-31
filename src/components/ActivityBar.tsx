@@ -1,71 +1,76 @@
 import type { SurfaceId } from "../types";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 
+const PAGES: { id: SurfaceId; label: string; icon: IconName }[] = [
+  { id: "overview", label: "Overview", icon: "home" },
+  { id: "verification", label: "Verification", icon: "verification" },
+  { id: "constraints", label: "Constraints", icon: "sliders" },
+  { id: "schematic", label: "Schematic", icon: "schematic" },
+  { id: "layout", label: "Layout", icon: "layout" },
+  { id: "plots", label: "Plots", icon: "plot" },
+  { id: "export", label: "Export", icon: "export" },
+];
+
+// Slim icon rail: the only navigation. Pages on top; explorer, assistant and project at the bottom.
 export function ActivityBar({
   surface,
-  sidebarOpen,
-  onToggleSidebar,
   onNavigate,
+  explorerOpen,
+  onToggleExplorer,
   assistantOpen,
-  onOpenAssistant,
+  onToggleAssistant,
+  onSwitchProject,
+  issues,
 }: {
-  surface: SurfaceId;
-  sidebarOpen: boolean;
-  onToggleSidebar: () => void;
+  surface: SurfaceId | null;
   onNavigate: (surface: SurfaceId) => void;
+  explorerOpen: boolean;
+  onToggleExplorer: () => void;
   assistantOpen: boolean;
-  onOpenAssistant: (tab: "chat" | "settings") => void;
+  onToggleAssistant: () => void;
+  onSwitchProject: () => void;
+  issues: number;
 }) {
   return (
-    <aside className="activity-bar" aria-label="Workbench activity">
+    <nav className="rail" aria-label="Workbench">
+      <button className="rail-logo" onClick={onSwitchProject} title="Projects">
+        R
+      </button>
+      {PAGES.map((page) => (
+        <button
+          key={page.id}
+          className={`rail-button ${surface === page.id ? "active" : ""}`}
+          onClick={() => onNavigate(page.id)}
+          title={page.label}
+          aria-label={page.label}
+          aria-current={surface === page.id ? "page" : undefined}
+        >
+          <Icon name={page.icon} size={18} />
+          {page.id === "verification" && issues > 0 && <span className="rail-badge">{issues}</span>}
+        </button>
+      ))}
+      <div className="rail-spacer" />
       <button
-        className={`activity-button ${sidebarOpen ? "active" : ""}`}
-        onClick={onToggleSidebar}
-        title="Project explorer"
-        aria-label="Toggle project explorer"
-        aria-pressed={sidebarOpen}
+        className={`rail-button ${explorerOpen ? "active" : ""}`}
+        onClick={onToggleExplorer}
+        title="Files"
+        aria-label="Toggle files"
+        aria-pressed={explorerOpen}
       >
-        <Icon name="folder" size={19} />
+        <Icon name="folder" size={18} />
       </button>
       <button
-        className={`activity-button ${surface === "schematic" ? "active" : ""}`}
-        onClick={() => onNavigate("schematic")}
-        title="Hierarchical schematic"
-      >
-        <Icon name="schematic" size={19} />
-      </button>
-      <button
-        className={`activity-button ${surface === "layout" ? "active" : ""}`}
-        onClick={() => onNavigate("layout")}
-        title="Layout viewer"
-      >
-        <Icon name="layout" size={19} />
-      </button>
-      <button
-        className={`activity-button ${surface === "verification" ? "active" : ""}`}
-        onClick={() => onNavigate("verification")}
-        title="Verification and evidence"
-      >
-        <Icon name="verification" size={19} />
-      </button>
-
-      <div className="activity-spacer" />
-
-      <button
-        className={`activity-button ${assistantOpen ? "active agent" : ""}`}
-        onClick={() => onOpenAssistant("chat")}
-        title="AI assistant"
+        className={`rail-button ${assistantOpen ? "active" : ""}`}
+        onClick={onToggleAssistant}
+        title="Assistant"
+        aria-label="Toggle assistant"
         aria-pressed={assistantOpen}
       >
-        <Icon name="sparkles" size={19} />
+        <Icon name="sparkles" size={18} />
       </button>
-      <button
-        className="activity-button"
-        onClick={() => onOpenAssistant("settings")}
-        title="Model and runner settings"
-      >
-        <Icon name="settings" size={18} />
+      <button className="rail-button" onClick={onSwitchProject} title="Switch project" aria-label="Switch project">
+        <Icon name="history" size={18} />
       </button>
-    </aside>
+    </nav>
   );
 }

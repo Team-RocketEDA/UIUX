@@ -1,4 +1,3 @@
-// Copied from rocket_fuel/client/src/view.ts (Team-RocketEDA/rocket_fuel). Edit it there, then copy again.
 // Turns opencode's event stream into what a chat panel shows. Pure: (view, event) -> view.
 // Works the same for live events and recorded ones served by evals/replay_server.py.
 
@@ -46,6 +45,8 @@ export type SessionView = {
   sessionId?: string
   status: "idle" | "busy" | "error"
   error?: string
+  // Set while opencode retries a failed model call (rate limit, used-up free quota, provider down).
+  retry?: { attempt: number; message: string; next?: number }
   agent?: string
   model?: string
   replay?: { recordedAt?: string; model?: string; note?: string }
@@ -99,7 +100,8 @@ const LABELS: Record<string, string> = {
   rocket_ip_search: "Search IP library",
   rocket_ip_get: "Read IP block",
   rocket_ip_register: "Register IP block",
-  engine_run_spice: "Run simulation",
+  engine_run_spice: "Prepare simulation",
+  engine_run_job: "Run simulation",
   engine_get_job_status: "Read result",
   engine_get_check_results: "Read check results",
   engine_get_logs: "Search logs",
@@ -152,6 +154,12 @@ function applyToolResult(view: SessionView, tool: string, input: Record<string, 
       iteration: { used: output.iteration, limit: output.iteration_limit, left: output.iterations_left, limitReached: !!output.limit_reached },
     }
   }
+  // Each executed engine run is one repair attempt; the plugin locks the session at the limit.
+  if (tool === "engine_run_job" && output.verdict) {
+    const used = (next.iteration?.used ?? 0) + 1
+    const limit = next.iteration?.limit
+    next = { ...next, iteration: { used, limit, left: limit === undefined ? undefined : Math.max(0, limit - used), limitReached: limit !== undefined && used >= limit } }
+  }
   if (tool === "rocket_propose_revision" && output.revision_id) {
     next = {
       ...next,
@@ -191,7 +199,10 @@ function applyPart(view: SessionView, part: any, time: number): SessionView {
       time: existing?.time ?? state.time?.start ?? time,
     }
     next = { ...next, steps: upsert(next.steps, step) }
-    if (state.status === "completed") next = applyToolResult(next, part.tool, step.input, parseJson(state.output))
+    // Apply a result once: the same completed part can arrive again (restored history, then the live stream).
+    if (state.status === "completed" && existing?.status !== "completed") {
+      next = applyToolResult(next, part.tool, step.input, parseJson(state.output))
+    }
     // The approval for apply_revision can arrive before the call's arguments do.
     const waiting = next.approvals.find((a) => a.callId === part.callID && !a.diff)
     const rev = next.revisions[step.input.revision_id as string]
@@ -261,11 +272,15 @@ export function reduce(view: SessionView, event: OpencodeEvent, time = Date.now(
         model: props.info?.model ? `${props.info.model.providerID}/${props.info.model.id}` : view.model,
       }
     case "session.status": {
-      const type = props.status?.type
-      return type === "busy" || type === "idle" ? { ...view, status: type } : view
+      const status = props.status ?? {}
+      // A retry keeps the session busy, but the user should see why nothing is happening.
+      if (status.type === "retry") {
+        return { ...view, status: "busy", retry: { attempt: status.attempt ?? 1, message: status.message ?? "Model call failed", next: status.next } }
+      }
+      return status.type === "busy" || status.type === "idle" ? { ...view, status: status.type, retry: undefined } : view
     }
     case "session.idle":
-      return { ...view, status: view.status === "error" ? "error" : "idle" }
+      return { ...view, status: view.status === "error" ? "error" : "idle", retry: undefined }
     case "session.error":
       return { ...view, status: "error", error: props.error?.data?.message ?? props.error?.name ?? "Agent error" }
     case "message.updated": {

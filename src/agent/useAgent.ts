@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { emptyView, FuelClient, reduce, type SessionView } from "./fuel";
 
-export type AgentMode = "mock" | "live" | "replay";
+export type AgentMode = "live" | "replay";
 
-// The dev server proxies /agent to opencode (live) or the replay server and adds auth there,
-// so no password or key ever reaches the browser. Electron main will play the same role.
-const mode: AgentMode = import.meta.env.VITE_ROCKET_AGENT ?? "mock";
+// The workspace server proxies /agent to the open project's agent and adds auth there, so no
+// password or key ever reaches the browser. VITE_ROCKET_AGENT=replay streams a recording instead.
+const mode: AgentMode = import.meta.env.VITE_ROCKET_AGENT === "replay" ? "replay" : "live";
 const client = new FuelClient({ baseUrl: `${window.location.origin}/agent` });
 
 export type Agent = {
@@ -26,48 +26,50 @@ export function useAgent(): Agent {
   const sessionRef = useRef<string | undefined>(undefined);
 
   useEffect(() => {
-    if (mode === "mock") return;
     const controller = new AbortController();
     let retry: number | undefined;
 
-    const restoreLatestSession = async () => {
-      if (mode !== "live" || sessionRef.current) return;
-      try {
-        const latest = await client.latestSession();
-        if (!latest || controller.signal.aborted) return;
-        sessionRef.current = latest;
-        const events = await client.history(latest);
-        if (controller.signal.aborted) return;
-        setView((current) => events.reduce((acc, event) => reduce(acc, event), current));
-      } catch {
-        // Ignore history lookup failures on fresh servers with no prior session.
-      }
-    };
-
     const connect = () => {
       setConnected(true);
-      void restoreLatestSession();
       client
         .subscribe((event) => {
-          setView((current) => {
-            const next = reduce(current, event);
-            if (next.sessionId && !sessionRef.current) sessionRef.current = next.sessionId;
-            return next;
-          });
+          setError(undefined);
+          setView((current) => reduce(current, event));
         }, controller.signal)
         .then(() => {
+          // A cancelled connection (unmount, or React's dev double-mount) must not touch state:
+          // it would mark the newer, live connection as offline.
+          if (controller.signal.aborted) return;
           setConnected(false);
           // A replay ends when the recording does; a live stream should come back.
-          if (mode === "live" && !controller.signal.aborted) retry = window.setTimeout(connect, 2000);
+          if (mode === "live") retry = window.setTimeout(connect, 2000);
         })
         .catch((err: unknown) => {
-          setConnected(false);
           if (controller.signal.aborted) return;
-          setError(`Agent unreachable: ${err instanceof Error ? err.message : String(err)}`);
+          setConnected(false);
+          // 503 = the agent for this project is still starting; keep retrying quietly.
+          const message = err instanceof Error ? err.message : String(err);
+          if (!message.includes("503")) setError(`Agent unreachable: ${message}`);
           if (!controller.signal.aborted) retry = window.setTimeout(connect, 3000);
         });
     };
-    connect();
+    // Pick the project's latest conversation back up (page reload, reopening the project), then stream.
+    const restore = async () => {
+      if (mode !== "live") return;
+      try {
+        const sessionId = await client.latestSession();
+        if (!sessionId || controller.signal.aborted) return;
+        const events = await client.history(sessionId);
+        if (controller.signal.aborted) return;
+        sessionRef.current = sessionId;
+        setView(events.reduce(reduce, emptyView(sessionId)));
+      } catch {
+        // Agent still starting; the stream below retries.
+      }
+    };
+    void restore().finally(() => {
+      if (!controller.signal.aborted) connect();
+    });
     return () => {
       controller.abort();
       window.clearTimeout(retry);

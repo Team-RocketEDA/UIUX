@@ -1,4 +1,3 @@
-// Copied from rocket_fuel/client/src/index.ts (Team-RocketEDA/rocket_fuel). Edit it there, then copy again.
 export { FuelClient } from "./client"
 export type { ClientOptions, Reply } from "./client"
 export { emptyView, reduce, toolLabel } from "./view"
