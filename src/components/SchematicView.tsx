@@ -158,6 +158,9 @@ export function SchematicView({
   const [texts, setTexts] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
   const [circuitName, setCircuitName] = useState<string>();
+  const [mode, setMode] = useState<"hierarchy" | "symbols">("hierarchy");
+  // The sheets above the one shown, from the root down: double-clicking a block pushes, the breadcrumb pops.
+  const [stack, setStack] = useState<{ file: string; circuit: string; via: string }[]>([]);
   const [selected, setSelected] = useState<string>();
   const [hot, setHot] = useState<string>();
   const [box, setBox] = useState<ViewBox>();
@@ -183,8 +186,40 @@ export function SchematicView({
     return parseNetlist(texts[active], library);
   }, [active, texts]);
 
+  // Every subcircuit the project's netlists define, and the file that defines it.
+  const definitions = useMemo(() => {
+    const out = new Map<string, { circuit: Circuit; file: string }>();
+    for (const [file, text] of Object.entries(texts)) {
+      for (const c of parseNetlist(text).subckts) if (!out.has(c.name.toLowerCase())) out.set(c.name.toLowerCase(), { circuit: c, file });
+    }
+    return out;
+  }, [texts]);
+
   const circuits: Circuit[] = netlist ? [...netlist.subckts, ...(netlist.top.devices.length ? [netlist.top] : [])].filter((c) => c.devices.length) : [];
-  const circuit = circuits.find((c) => c.name === circuitName) ?? circuits[0];
+  // Roots: the top level, and subcircuits nothing in this file instantiates.
+  const instantiated = new Set(circuits.flatMap((c) => c.devices.filter((d) => d.kind === "subckt" && d.model).map((d) => d.model!.toLowerCase())));
+  const roots = circuits.filter((c) => c === netlist?.top || !instantiated.has(c.name.toLowerCase()));
+  const circuit = circuits.find((c) => c.name === circuitName) ?? roots[0] ?? circuits[0];
+  const sheetOf = (device: Device) => (device.kind === "subckt" && device.model ? definitions.get(device.model.toLowerCase()) : undefined);
+
+  const openSheet = (device: Device) => {
+    const sheet = sheetOf(device);
+    if (!sheet || !active || !circuit) return;
+    setStack((previous) => [...previous, { file: active, circuit: circuit.name, via: device.name }]);
+    setPath(sheet.file);
+    setCircuitName(sheet.circuit.name);
+  };
+  const goUp = (index: number) => {
+    const target = stack[index];
+    setStack((previous) => previous.slice(0, index));
+    setPath(target.file);
+    setCircuitName(target.circuit);
+  };
+  const showFile = (file: string) => {
+    setStack([]);
+    setCircuitName(undefined);
+    setPath(file);
+  };
   const layout = useMemo(() => (circuit ? layoutCircuit(circuit) : undefined), [circuit]);
   const fit: ViewBox | undefined = layout && [0, 0, layout.width, layout.height];
 
@@ -246,17 +281,31 @@ export function SchematicView({
     drag.current = null;
   };
 
+  const symbolCount = useMemo(() => collectSymbols(texts, definitions).length, [texts, definitions]);
+
   const header = (
     <SurfaceHeader
       eyebrow={active ? `Schematic · ${active}` : "Schematic"}
-      title={circuit ? circuit.name : "Schematic"}
-      subtitle="Drawn from the project's netlist at this revision. Edit the netlist (or ask the assistant) to change it."
+      title={mode === "symbols" ? "Symbols" : circuit ? circuit.name : "Schematic"}
+      subtitle="Drawn from the project's netlists at this revision: double-click a SHEET block to descend into it. Edit the netlist (or ask the assistant) to change it."
       actions={
         active && (
-          <button className="btn" onClick={() => onOpenFile(active)}>
-            <Icon name="code" size={13} />
-            Open netlist
-          </button>
+          <>
+            <div className="segmented" role="tablist" aria-label="Schematic view">
+              <button className={mode === "hierarchy" ? "active" : ""} onClick={() => setMode("hierarchy")}>
+                <Icon name="schematic" size={13} />
+                Hierarchy
+              </button>
+              <button className={mode === "symbols" ? "active" : ""} onClick={() => setMode("symbols")}>
+                <Icon name="layers" size={13} />
+                Symbols ({symbolCount})
+              </button>
+            </div>
+            <button className="btn" onClick={() => onOpenFile(active)}>
+              <Icon name="code" size={13} />
+              Open netlist
+            </button>
+          </>
         )
       }
     />
@@ -335,15 +384,20 @@ export function SchematicView({
                 className={`device ${placed.device.name === selected ? "selected" : ""} ${proposed.has(placed.device.name) ? "proposed" : ""}`}
                 transform={`translate(${placed.x} ${placed.y})`}
                 onClick={() => setSelected(placed.device.name)}
+                onDoubleClick={() => openSheet(placed.device)}
               >
                 <rect x={-placed.width / 2 - 6} y={-placed.height / 2} width={placed.width + 12} height={placed.height} className="device-hit" />
                 <g className="sym"><Symbol placed={placed} /></g>
-                <text x={placed.device.kind === "subckt" || placed.device.kind === "other" ? 0 : 20} y={placed.device.kind === "subckt" || placed.device.kind === "other" ? -placed.height / 2 - 8 : -6}
-                  textAnchor={placed.device.kind === "subckt" || placed.device.kind === "other" ? "middle" : "start"} className="device-name">
+                <text x={sheetOf(placed.device) ? -placed.width / 2 : placed.device.kind === "subckt" || placed.device.kind === "other" ? 0 : 20}
+                  y={placed.device.kind === "subckt" || placed.device.kind === "other" ? -placed.height / 2 - 8 : -6}
+                  textAnchor={sheetOf(placed.device) ? "start" : placed.device.kind === "subckt" || placed.device.kind === "other" ? "middle" : "start"} className="device-name">
                   {placed.device.name}
                 </text>
                 {placed.device.kind !== "subckt" && placed.device.kind !== "other" && (
                   <text x={20} y={8} className="device-size">{sizeText(placed.device, netlist.params)}</text>
+                )}
+                {sheetOf(placed.device) && (
+                  <text x={placed.width / 2} y={-placed.height / 2 - 8} textAnchor="end" className="sheet-tag">SHEET ↘</text>
                 )}
                 {proposed.has(placed.device.name) && (
                   <text x={20} y={21} className="device-proposed">{proposedText(placed.device.name)}</text>
@@ -351,9 +405,12 @@ export function SchematicView({
               </g>
             ))}
           </svg>
-          <div className="schematic-hint">{hot ? `Net ${hot}` : "Scroll to zoom · drag to pan · hover a wire to trace its net · click a part"}</div>
+          <div className="schematic-hint">
+            {hot ? `Net ${hot}` : `Scroll to zoom · drag to pan · hover a wire to trace its net · click a part${layout.devices.some((d) => sheetOf(d.device)) ? " · double-click a SHEET to open it" : ""}`}
+          </div>
         </div>
-        <Inspector netlist={netlist} circuit={circuit} placed={device} path={active!} onOpenFile={onOpenFile} onHot={setHot} />
+        <Inspector netlist={netlist} circuit={circuit} placed={device} path={active!} onOpenFile={onOpenFile} onHot={setHot}
+          onOpenSheet={device && sheetOf(device.device) ? () => openSheet(device.device) : undefined} />
       </div>
     );
   }
@@ -362,22 +419,50 @@ export function SchematicView({
     <div className="fill-surface schematic-page">
       {header}
       <div className="schematic-pickers">
-        {netlists.length > 1 && (
-          <div className="segmented" role="tablist" aria-label="Netlist">
-            {netlists.map((file) => (
-              <button key={file} className={file === active ? "active" : ""} onClick={() => setPath(file)}>{file}</button>
+        {mode === "hierarchy" && (
+          <nav className="breadcrumb" aria-label="Hierarchy">
+            {stack.map((item, index) => (
+              <span key={index}>
+                <button onClick={() => goUp(index)}>{index === 0 ? item.circuit === "(top level)" ? item.file.split("/").pop() : item.circuit : item.circuit}</button>
+                <Icon name="chevronRight" size={12} />
+                <span className="crumb-via mono">{item.via}</span>
+              </span>
             ))}
-          </div>
+            <b>{circuit ? (circuit.name === "(top level)" ? active?.split("/").pop() : circuit.name) : ""}</b>
+            {stack.length > 0 && <span className="muted">{active}</span>}
+          </nav>
         )}
-        {circuits.length > 1 && (
+        <div className="head-spacer" />
+        {mode === "hierarchy" && roots.length > 1 && stack.length === 0 && (
           <div className="segmented" role="tablist" aria-label="Circuit">
-            {circuits.map((c) => (
+            {roots.map((c) => (
               <button key={c.name} className={c.name === circuit?.name ? "active" : ""} onClick={() => setCircuitName(c.name)}>{c.name}</button>
             ))}
           </div>
         )}
+        {netlists.length > 1 && (
+          <div className="segmented" role="tablist" aria-label="Netlist">
+            {netlists.map((file) => (
+              <button key={file} className={file === active ? "active" : ""} onClick={() => showFile(file)}>{file}</button>
+            ))}
+          </div>
+        )}
       </div>
-      {body}
+      {mode === "symbols" ? (
+        <SymbolsView
+          texts={texts}
+          definitions={definitions}
+          onShow={(file, circuitName, deviceName) => {
+            setMode("hierarchy");
+            setStack([]);
+            setPath(file);
+            setCircuitName(circuitName);
+            window.setTimeout(() => setSelected(deviceName), 0);
+          }}
+        />
+      ) : (
+        body
+      )}
     </div>
   );
 }
@@ -389,6 +474,7 @@ function Inspector({
   path,
   onOpenFile,
   onHot,
+  onOpenSheet,
 }: {
   netlist: Netlist;
   circuit: Circuit;
@@ -396,6 +482,7 @@ function Inspector({
   path: string;
   onOpenFile: (path: string) => void;
   onHot: (net?: string) => void;
+  onOpenSheet?: () => void;
 }) {
   if (placed) {
     const { device } = placed;
@@ -431,6 +518,12 @@ function Inspector({
           ))}
         </dl>
         <code className="netlist-line">{device.line}: {device.text}</code>
+        {onOpenSheet && (
+          <button className="btn primary" onClick={onOpenSheet}>
+            <Icon name="schematic" size={13} />
+            Open sheet {device.model}
+          </button>
+        )}
         <button className="btn" onClick={() => onOpenFile(path)}>
           <Icon name="code" size={13} />
           Open {path}
@@ -477,6 +570,129 @@ function ParamRow({ name, raw, netlist, unit = "" }: { name: string; raw: string
         <b>{shown}</b>
         {spiceNumber(raw) === undefined && shown !== raw && <span className="mono muted"> {raw}</span>}
       </dd>
+    </div>
+  );
+}
+
+const KIND_TITLE: Record<Device["kind"], string> = {
+  nmos: "NMOS transistor", pmos: "PMOS transistor", cap: "Capacitor", res: "Resistor", ind: "Inductor",
+  vsrc: "Voltage source", isrc: "Current source", diode: "Diode", subckt: "Subcircuit", other: "Device",
+};
+
+type SymbolEntry = {
+  key: string;
+  title: string;
+  sample: Device;
+  uses: { file: string; circuit: string; device: string }[];
+  models: string[];
+  defined?: { file: string; line: number; ports: string[] };
+};
+
+// One symbol per device kind, and one per subcircuit (its pins are the .subckt ports), with every use.
+function collectSymbols(texts: Record<string, string>, definitions: Map<string, { circuit: Circuit; file: string }>): SymbolEntry[] {
+  const entries = new Map<string, SymbolEntry>();
+  for (const [file, text] of Object.entries(texts)) {
+    const library = Object.entries(texts).filter(([other]) => other !== file).flatMap(([, t]) => parseNetlist(t).subckts);
+    const netlist = parseNetlist(text, library);
+    for (const circuit of [...netlist.subckts, netlist.top]) {
+      for (const device of circuit.devices) {
+        const key = device.kind === "subckt" ? `subckt:${(device.model ?? "?").toLowerCase()}` : device.kind;
+        let entry = entries.get(key);
+        if (!entry) {
+          const definition = device.kind === "subckt" && device.model ? definitions.get(device.model.toLowerCase()) : undefined;
+          entry = {
+            key,
+            title: device.kind === "subckt" ? device.model ?? "Subcircuit" : KIND_TITLE[device.kind],
+            sample: device,
+            uses: [],
+            models: [],
+            defined: definition && { file: definition.file, line: definition.circuit.line, ports: definition.circuit.ports },
+          };
+          entries.set(key, entry);
+        }
+        entry.uses.push({ file, circuit: circuit.name, device: device.name });
+        if (device.model && device.kind !== "subckt" && !entry.models.includes(device.model)) entry.models.push(device.model);
+      }
+    }
+  }
+  const order = Object.keys(KIND_TITLE);
+  return [...entries.values()].sort((a, b) => order.indexOf(a.sample.kind) - order.indexOf(b.sample.kind) || a.title.localeCompare(b.title));
+}
+
+function SymbolPreview({ device }: { device: Device }) {
+  const placed = useMemo(() => layoutCircuit({ name: "symbol", ports: [], devices: [device], line: 0 }).devices[0], [device]);
+  if (!placed) return null;
+  const pad = 34;
+  const box = [placed.x - placed.width / 2 - pad, placed.y - placed.height / 2 - pad, placed.width + pad * 2, placed.height + pad * 2];
+  const box_ = device.kind === "subckt" || device.kind === "other";
+  return (
+    <svg viewBox={box.join(" ")} className="symbol-preview" aria-hidden="true">
+      <g className="sym" transform={`translate(${placed.x} ${placed.y})`}><Symbol placed={placed} /></g>
+      {placed.pins.filter((pin) => !pin.hidden).map((pin) => {
+        const [dx, dy, anchor]: [number, number, "start" | "end"] = pin.side === "left" ? [-5, -4, "end"] : pin.side === "right" ? [5, -4, "start"] : pin.side === "top" ? [5, -2, "start"] : [5, 10, "start"];
+        return (
+          <g key={pin.name + pin.side} className="symbol-pin">
+            <circle cx={pin.x} cy={pin.y} r={2.5} />
+            {!box_ && <text x={pin.x + dx} y={pin.y + dy} textAnchor={anchor}>{pin.name}</text>}
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+function SymbolsView({
+  texts,
+  definitions,
+  onShow,
+}: {
+  texts: Record<string, string>;
+  definitions: Map<string, { circuit: Circuit; file: string }>;
+  onShow: (file: string, circuit: string, device: string) => void;
+}) {
+  const symbols = useMemo(() => collectSymbols(texts, definitions), [texts, definitions]);
+  return (
+    <div className="symbol-grid">
+      {symbols.map((symbol) => (
+        <article key={symbol.key} className="panel symbol-card">
+          <SymbolPreview device={symbol.sample} />
+          <div className="symbol-info">
+            <span className="eyebrow">{symbol.sample.kind === "subckt" ? "Subcircuit" : "Primitive"}</span>
+            <h3>{symbol.title}</h3>
+            <dl className="kv">
+              <div className="kv-row">
+                <dt>Pins</dt>
+                <dd className="mono">{(symbol.defined?.ports ?? symbol.sample.pins.map((pin) => pin.name)).join(" ")}</dd>
+              </div>
+              {symbol.models.length > 0 && (
+                <div className="kv-row">
+                  <dt>Models</dt>
+                  <dd className="mono">{symbol.models.join(", ")}</dd>
+                </div>
+              )}
+              {symbol.defined && (
+                <div className="kv-row">
+                  <dt>Defined</dt>
+                  <dd className="mono">{symbol.defined.file}:{symbol.defined.line}</dd>
+                </div>
+              )}
+              <div className="kv-row">
+                <dt>Used</dt>
+                <dd>{symbol.uses.length}×</dd>
+              </div>
+            </dl>
+            <div className="symbol-uses">
+              {symbol.uses.slice(0, 12).map((use) => (
+                <button key={use.file + use.circuit + use.device} className="net-chip" onClick={() => onShow(use.file, use.circuit, use.device)}
+                  title={`Show ${use.device} in ${use.circuit} (${use.file})`}>
+                  {use.device}
+                </button>
+              ))}
+              {symbol.uses.length > 12 && <span className="muted">+{symbol.uses.length - 12}</span>}
+            </div>
+          </div>
+        </article>
+      ))}
     </div>
   );
 }

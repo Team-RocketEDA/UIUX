@@ -27,6 +27,19 @@ const HIDDEN = new Set([".git", ".opencode", ".rocket", "node_modules"]);
 const READ_ONLY_TOP = new Set(["results", "exports"]);
 const READ_ONLY_FILES = new Set(["ip/manifest.yaml"]);
 const TOOLS = ["ngspice", "verilator", "iverilog", "yosys", "klayout", "magic", "netgen", "openroad"];
+// What each engine tool needs on this machine: a binary on PATH, or a module in the engine's Python.
+const ENGINE_TOOLS: Record<string, { binary?: string; module?: string }> = {
+  ngspice: { binary: "ngspice" },
+  klayout: { binary: "klayout" },
+  magic: { binary: "magic" },
+  netgen: { binary: "netgen" },
+  icarus: { binary: "iverilog" },
+  slang: { binary: "slang" },
+  sax: { module: "sax" },
+};
+
+export type EngineTool = { name: string; available: boolean; needs: string };
+export type JobKind = { operation: string; tools: EngineTool[] };
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -179,8 +192,10 @@ export function createWorkspace(options: WorkspaceOptions) {
 
   async function summary(open: Open) {
     let revision = "";
+    let branch = "";
     let dirty = false;
     try {
+      branch = await git(open.dir, "rev-parse", "--abbrev-ref", "HEAD");
       revision = await git(open.dir, "rev-parse", "--short", "HEAD");
       dirty = (await git(open.dir, "status", "--porcelain", "--", "design", "tests", "constraints.yaml")) !== "";
     } catch {
@@ -189,11 +204,43 @@ export function createWorkspace(options: WorkspaceOptions) {
     return {
       name: open.name,
       dir: open.dir,
+      branch,
       revision,
       dirty,
       constraints: readConstraints(open.dir),
       agent: open.agent ? { state: open.agent.state, error: open.agent.error } : { state: "stopped" },
     };
+  }
+
+  // The engine's own job kinds (list_job_kinds), each tool marked by whether it can run here.
+  // Asking the engine takes seconds, so the answer is kept until the server restarts.
+  let jobKinds: Promise<JobKind[]> | undefined;
+  function engineJobKinds(): Promise<JobKind[]> {
+    jobKinds ??= (async () => {
+      if (!existsSync(engineHome)) return [];
+      const engine = ["run", "--quiet", "--project", engineHome, "python"];
+      const { stdout } = await run("uv", [...engine, "-m", "rocket_engine.adapters.mcp.server", "--project", "catalog", "--call", "list_job_kinds", "--args", "{}"], { timeout: 60_000 });
+      const kinds: { operation: string; tools: string[] }[] = JSON.parse(stdout).job_kinds ?? [];
+      const checked = new Map<string, Promise<boolean>>();
+      const available = (tool: string) => {
+        const need = ENGINE_TOOLS[tool] ?? { binary: tool };
+        if (!checked.has(tool)) {
+          checked.set(tool, need.module
+            ? run("uv", [...engine, "-c", `import ${need.module}`], { timeout: 60_000 }).then(() => true, () => false)
+            : which(need.binary!));
+        }
+        return checked.get(tool)!;
+      };
+      return Promise.all(kinds.map(async (kind) => ({
+        operation: kind.operation,
+        tools: await Promise.all(kind.tools.map(async (name) => {
+          const need = ENGINE_TOOLS[name] ?? { binary: name };
+          return { name, available: await available(name), needs: need.module ? `the ${need.module} Python package in the engine environment` : `${need.binary} on PATH` };
+        })),
+      })));
+    })();
+    jobKinds.catch(() => (jobKinds = undefined));
+    return jobKinds;
   }
 
   async function runChecks(open: Open) {
@@ -230,6 +277,8 @@ export function createWorkspace(options: WorkspaceOptions) {
           projectsDir, tools, project: current?.name ?? null,
         });
       }
+      case "GET /api/engine/jobs":
+        return json(res, 200, await engineJobKinds());
       case "GET /api/templates":
         return json(res, 200, TEMPLATES.filter((id) => existsSync(path.join(fuelHome, "examples", id))).map((id) => {
           const c = readConstraints(path.join(fuelHome, "examples", id));

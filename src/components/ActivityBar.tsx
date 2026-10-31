@@ -8,10 +8,11 @@ const PAGES: { id: SurfaceId; label: string; icon: IconName }[] = [
   { id: "schematic", label: "Schematic", icon: "schematic" },
   { id: "layout", label: "Layout", icon: "layout" },
   { id: "plots", label: "Plots", icon: "plot" },
+  { id: "terminal", label: "Terminal", icon: "terminal" },
   { id: "export", label: "Export", icon: "export" },
 ];
 
-// Slim icon rail: the only navigation. Pages on top; explorer, assistant and project at the bottom.
+// Slim icon rail: the page navigation (keys 1–8 in this order). Explorer, assistant and project at the bottom.
 export function ActivityBar({
   surface,
   onNavigate,
@@ -33,9 +34,6 @@ export function ActivityBar({
 }) {
   return (
     <nav className="rail" aria-label="Workbench">
-      <button className="rail-logo" onClick={onSwitchProject} title="Projects">
-        R
-      </button>
       {PAGES.map((page) => (
         <button
           key={page.id}

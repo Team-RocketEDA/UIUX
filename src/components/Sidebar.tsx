@@ -30,25 +30,28 @@ function buildTree(files: ProjectFile[]): FolderNode {
 
 // File explorer: the project's real files. Navigation lives in the rail.
 export function Sidebar({
-  projectName,
-  revision,
   files,
   dirtyFiles,
   openFilePath,
   onOpenFile,
   width,
+  pdk,
+  domains,
+  onOpenConstraints,
 }: {
-  projectName: string;
-  revision: string;
   files: ProjectFile[];
   dirtyFiles: Set<string>;
   openFilePath: string | null;
   onOpenFile: (path: string) => void;
   width: number;
+  pdk?: string;
+  domains?: string[];
+  onOpenConstraints: () => void;
 }) {
   // Engine run files are noise most of the time; start with results/ folded.
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set(["results"]));
   const tree = buildTree(files);
+  const noPdk = !pdk || pdk === "none";
 
   const toggle = (path: string) =>
     setCollapsed((previous) => {
@@ -94,13 +97,22 @@ export function Sidebar({
   return (
     <aside className="explorer" style={{ width }}>
       <header className="explorer-header">
-        <b>{projectName}</b>
-        <span>{revision || "no commits"}</span>
+        <b>Project files</b>
+        <span>{files.length}</span>
       </header>
       <div className="explorer-tree">
         {tree.folders.map((folder) => renderFolder(folder, 0))}
         {renderFiles(tree, 0)}
       </div>
+      <button className="pdk-footer" onClick={onOpenConstraints} title="Set in constraints.yaml">
+        <span className="pdk-mark">{noPdk ? "–" : pdk!.slice(0, 1).toUpperCase()}</span>
+        <span className="pdk-text">
+          <span className="eyebrow">Active PDK</span>
+          <b>{noPdk ? "None" : pdk}</b>
+          <small>{[noPdk ? "Generic models" : "", ...(domains ?? []).map((d) => d[0].toUpperCase() + d.slice(1))].filter(Boolean).join(" · ")}</small>
+        </span>
+        <Icon name="chevronRight" size={13} />
+      </button>
     </aside>
   );
 }

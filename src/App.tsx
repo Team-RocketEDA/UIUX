@@ -13,6 +13,7 @@ import { RunConsole } from "./components/RunConsole";
 import { Sidebar } from "./components/Sidebar";
 import { SourceSurface } from "./components/SourceSurface";
 import { ResizeHandle } from "./components/ui";
+import { describeOperations, engineTools, SHORTCUT_PAGES, ShortcutsDialog, TopBar, type EngineToolEntry } from "./components/TopBar";
 import { PlotsView } from "./components/PlotsView";
 import { SchematicView } from "./components/SchematicView";
 import type { Proposal } from "./schematic/changes";
@@ -73,6 +74,11 @@ export function App() {
   // What the assistant's pending netlist change would do; the schematic highlights it.
   const [proposal, setProposal] = useState<Proposal>();
 
+  const [tools, setTools] = useState<EngineToolEntry[] | null>(null);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // A request for the assistant prepared by a toolbelt button; the user reviews it before sending.
+  const [draft, setDraft] = useState<{ text: string; id: number }>();
+
   const [toast, setToast] = useState<string | null>(null);
   const viewRef = useRef<HTMLDivElement>(null);
 
@@ -102,6 +108,36 @@ export function App() {
   useEffect(() => {
     viewRef.current?.scrollTo({ top: 0 });
   }, [view]);
+
+  useEffect(() => {
+    if (!project || tools) return;
+    api.engineJobs().then((kinds) => setTools(engineTools(kinds))).catch(() => setTools([]));
+  }, [project?.name]);
+
+  // Keys: 1–8 pages, Ctrl+B files, Ctrl+J console, Ctrl+I assistant, ? this list, Esc closes it.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement;
+      const typing = target.closest("input, textarea, select, [contenteditable=true]");
+      const mod = event.ctrlKey || event.metaKey;
+      if (mod && !event.shiftKey && !event.altKey) {
+        const key = event.key.toLowerCase();
+        const toggle = key === "b" ? setSidebarOpen : key === "j" ? setConsoleOpen : key === "i" ? setAssistantOpen : undefined;
+        if (toggle) {
+          event.preventDefault();
+          toggle((open) => !open);
+        }
+        return;
+      }
+      if (event.key === "Escape" && shortcutsOpen) setShortcutsOpen(false);
+      if (typing || event.altKey) return;
+      if (event.key === "?") setShortcutsOpen((open) => !open);
+      const page = SHORTCUT_PAGES[Number(event.key) - 1];
+      if (/^[1-8]$/.test(event.key) && page) navigate(page);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [shortcutsOpen]);
 
   useEffect(() => {
     if (!toast) return;
@@ -232,6 +268,19 @@ export function App() {
   };
 
   const openAssistant = () => setAssistantOpen(true);
+
+  const runTool = (tool: EngineToolEntry) => {
+    const what = describeOperations(tool.operations);
+    if (!tool.available) {
+      notify(`${tool.name} isn't installed on this machine (needs ${tool.needs}), so Rocket Engine can't run ${what} with it.`);
+    } else if (tool.name === "ngspice") {
+      void runChecks();
+    } else {
+      // Other tools need inputs only the design knows (which GDS, which testbench); the assistant picks them.
+      setAssistantOpen(true);
+      setDraft({ text: `Run the engine's ${what} with ${tool.name} on this project and tell me the verdict.`, id: Date.now() });
+    }
+  };
 
   const startResize =
     (target: "sidebar" | "assistant" | "console") => (event: ReactPointerEvent) => {
@@ -366,7 +415,23 @@ export function App() {
     }
   };
 
+  const agentStatus = project.agent.state === "ready" ? "connected" : project.agent.state === "starting" ? "starting" : "offline";
+
   return (
+    <div className="app-frame">
+    <TopBar
+      projectName={project.name}
+      branch={project.branch}
+      revision={project.revision}
+      dirty={project.dirty}
+      tools={tools}
+      runningJobs={runningJobs}
+      agentStatus={agentStatus}
+      onSwitchProject={() => void switchProject()}
+      onRunTool={runTool}
+      onShortcuts={() => setShortcutsOpen(true)}
+      onExport={() => navigate("export")}
+    />
     <main className="app-shell">
       <ActivityBar
         surface={view.kind === "surface" ? surface : null}
@@ -382,13 +447,14 @@ export function App() {
       {sidebarOpen && (
         <>
           <Sidebar
-            projectName={project.name}
-            revision={project.revision}
             files={files}
             dirtyFiles={dirtyFiles}
             openFilePath={view.kind === "file" ? view.path : null}
             onOpenFile={(path) => void openFile(path)}
             width={sidebarWidth}
+            pdk={project.constraints.pdk}
+            domains={project.constraints.domains}
+            onOpenConstraints={() => navigate("constraints")}
           />
           <ResizeHandle
             orientation="column"
@@ -433,10 +499,6 @@ export function App() {
               );
             })}
           </div>
-          <span className="rev" title="Git revision of the project">
-            <span className={`dot ${project.dirty ? "amber" : "green"}`} />
-            {project.revision || "no commits"}
-          </span>
           <button className={`ghost-icon ${consoleOpen ? "on" : ""}`} onClick={() => setConsoleOpen((open) => !open)} title="Run console" aria-label="Toggle run console">
             <Icon name="terminal" size={15} />
             {runningJobs > 0 && <i className="running-dot" />}
@@ -487,6 +549,7 @@ export function App() {
             onNavigate={navigate}
             readFile={async (path) => (await api.readFile(path)).content}
             onProposal={setProposal}
+            draft={draft}
           />
         </>
       )}
@@ -500,5 +563,7 @@ export function App() {
         {toast}
       </div>
     </main>
+    {shortcutsOpen && <ShortcutsDialog onClose={() => setShortcutsOpen(false)} />}
+    </div>
   );
 }

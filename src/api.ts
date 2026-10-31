@@ -12,6 +12,9 @@ export type WorkspaceStatus = {
   project: string | null;
 };
 
+export type EngineTool = { name: string; available: boolean; needs: string };
+export type JobKind = { operation: string; tools: EngineTool[] };
+
 export type Template = { id: string; title: string; description: string };
 export type ProjectEntry = { name: string; title: string; description: string; modified: number };
 
@@ -40,6 +43,7 @@ export type Constraints = {
 export type ProjectSummary = {
   name: string;
   dir: string;
+  branch: string;
   revision: string;
   dirty: boolean;
   constraints: Constraints;
@@ -79,6 +83,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<WorkspaceStatus>("GET", "/api/status"),
+  engineJobs: () => request<JobKind[]>("GET", "/api/engine/jobs"),
   templates: () => request<Template[]>("GET", "/api/templates"),
   projects: () => request<ProjectEntry[]>("GET", "/api/projects"),
   createProject: (name: string, template: string) => request<{ name: string }>("POST", "/api/projects", { name, template }),
