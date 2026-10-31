@@ -474,39 +474,6 @@ export function AssistantPanel({
 
   return (
     <aside className="assistant-panel" style={{ width }} hidden={hidden}>
-      <header className="assistant-header">
-        <div className="assistant-title">
-          <span className="assistant-mark">
-            <Icon name="sparkles" size={15} />
-          </span>
-          <div>
-            <b>Rocket assistant</b>
-            <span>{live ? `Rocket Fuel · ${agent.view.model ?? agent.view.replay?.model ?? "opencode"}` : `${provider.label} · ${model}`}</span>
-          </div>
-        </div>
-        <div className="assistant-header-actions">
-          {replay ? (
-            <span className="live-pill replay">
-              <i />
-              REPLAY
-            </span>
-          ) : live ? (
-            <span className={`live-pill ${agent.connected ? "" : "offline"}`}>
-              <i />
-              {agent.connected ? "LIVE" : "OFFLINE"}
-            </span>
-          ) : (
-            <span className="live-pill offline">
-              <i />
-              MOCK
-            </span>
-          )}
-          <button className="icon-button" onClick={onClose} title="Close assistant" aria-label="Close assistant">
-            <Icon name="close" size={15} />
-          </button>
-        </div>
-      </header>
-
       <div className="assistant-tabs" role="tablist" aria-label="Assistant views">
         {(
           [
@@ -526,6 +493,11 @@ export function AssistantPanel({
             {id === "activity" && pendingCount > 0 && <span className="tab-dot" />}
           </button>
         ))}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", paddingRight: 4 }}>
+          <button className="icon-button" onClick={onClose} title="Close assistant" aria-label="Close assistant">
+            <Icon name="close" size={13} />
+          </button>
+        </div>
       </div>
 
       {tab === "chat" && (
@@ -608,20 +580,10 @@ export function AssistantPanel({
 
             {!live && pendingApproval && (
               <div className="approval-card">
-                <div className="approval-heading">
-                  <span className="approval-title">
-                    <Icon name="warning" size={14} />
-                    Approval required
-                  </span>
-                  <span className="approval-tool">edit_file</span>
-                </div>
                 <button className="approval-path" onClick={() => onOpenFile("design/digital/gpio.sv")}>
                   <Icon name="file" size={12} />
                   design/digital/gpio.sv
                 </button>
-                <p className="approval-desc">
-                  Register the readback path one level earlier to remove the 125 MHz setup violation.
-                </p>
                 <pre className="diff-block">
                   <span className="diff-del">- always_comb begin</span>
                   <span className="diff-del">-   readback = read_pending ? bus_data : gpio_in;</span>

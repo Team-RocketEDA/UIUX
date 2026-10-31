@@ -5849,3 +5849,90 @@ button, a { -webkit-tap-highlight-color: transparent; }
   border: 0;
   border-radius: 0;
 }
+/* Lean IDE declutter overrides */
+.assistant-title span,
+.diagram-statusbar,
+.diagram-hint {
+  display: none !important;
+}
+
+.fill-surface {
+  padding: 0;
+  gap: 0;
+}
+
+.fill-surface .surface-header {
+  margin: 0;
+  height: 32px;
+  min-height: 32px;
+  flex: 0 0 32px;
+  padding: 0 8px;
+}
+
+.fill-surface > .panel {
+  border: 0;
+  border-radius: 0;
+}
+
+.diagram-overlay,
+.composer-context,
+.surface-header,
+.verification-summary,
+.verification-footer,
+.status-explainer,
+.plot-stats {
+  display: none !important;
+}
+
+.unified-header {
+  display: flex;
+  flex: 0 0 34px;
+  height: 34px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-deep);
+}
+
+.unified-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  border-bottom: 0;
+  background: transparent;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.unified-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.unified-tabs .editor-tab {
+  flex: 0 0 auto;
+  min-width: 0;
+  height: 34px;
+  min-height: 34px;
+  padding: 0 11px;
+  border-top: 2px solid transparent;
+  border-right: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.unified-tabs .editor-tab.active {
+  color: var(--text);
+  background: var(--bg);
+  border-top-color: var(--blue);
+}
+
+.unified-tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 6px;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+}

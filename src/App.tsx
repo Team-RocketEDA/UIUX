@@ -39,8 +39,7 @@ import { SchematicSurface } from "./components/SchematicSurface";
 import { Sidebar } from "./components/Sidebar";
 import { SourceSurface } from "./components/SourceSurface";
 import { TerminalSurface } from "./components/TerminalSurface";
-import { Toolbelt } from "./components/Toolbelt";
-import { TopBar } from "./components/TopBar";
+import { ToolIcon } from "./components/icons";
 import { ResizeHandle } from "./components/ui";
 import { VerificationSurface } from "./components/VerificationSurface";
 
@@ -819,24 +818,107 @@ TNS  0.00 ns
 
   return (
     <main className="app-shell">
-      <TopBar
-        revision={revision}
-        runningJobs={runningJobs}
-        agentMode={agent.mode}
-        agentConnected={agent.connected}
-        onExport={() => navigate("export")}
-        onOpenShortcuts={() => setShortcutsOpen(true)}
-      />
-      <Toolbelt
-        tools={toolRegistry}
-        onRunTool={runTool}
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={() => setSidebarOpen((open) => !open)}
-        onToggleConsole={() => setConsoleOpen((open) => !open)}
-        consoleOpen={consoleOpen}
-        onToggleAssistant={() => setAssistantOpen((open) => !open)}
-        assistantOpen={assistantOpen}
-      />
+      <header className="topbar unified-header">
+        <button
+          className={`toolbar-button ${sidebarOpen ? "active" : ""}`}
+          onClick={() => setSidebarOpen((open) => !open)}
+          title="Toggle files (⌘B)"
+          aria-pressed={sidebarOpen}
+        >
+          <Icon name="folder" size={13} />
+        </button>
+        <div className="brand">
+          <strong>Rocket<span>EDA</span></strong>
+        </div>
+
+        <div className="tabstrip unified-tabs" role="tablist" aria-label="Open views">
+          {(["schematic", "layout", "plots", "verification", "constraints"] as SurfaceId[]).map(
+            (tabId) => {
+              const isActive = view.kind === "surface" && surface === tabId;
+              return (
+                <button
+                  key={tabId}
+                  className={`editor-tab surface-tab ${isActive ? "active" : ""}`}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => navigate(tabId)}
+                >
+                  <span>{surfaceMeta[tabId].label}</span>
+                </button>
+              );
+            },
+          )}
+          {openFiles.map((path) => {
+            const isActive = view.kind === "file" && view.path === path;
+            return (
+              <div className={`editor-tab file-tab ${isActive ? "active" : ""}`} key={path}>
+                <button
+                  className="file-tab-main"
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => setView({ kind: "file", path })}
+                  title={path}
+                >
+                  <span>{path.split("/").pop()}</span>
+                  {dirtyFiles.has(path) && <i className="dirty-dot" />}
+                </button>
+                <button
+                  className="tab-close"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    closeFile(path);
+                  }}
+                  aria-label={`Close ${path}`}
+                >
+                  <Icon name="close" size={10} />
+                </button>
+              </div>
+            );
+          })}
+        </div>
+
+        <div className="unified-tools" role="toolbar" aria-label="Engine tools">
+          {toolRegistry
+            .filter((t) => t.available)
+            .slice(0, 6)
+            .map((tool) => (
+              <button
+                key={tool.id}
+                className="tool-button"
+                title={`${tool.label} — ${tool.detail}`}
+                aria-label={tool.label}
+                onClick={() => void runTool(tool.id)}
+              >
+                <span className="tool-button-icon">
+                  <ToolIcon toolId={tool.id} fallback={tool.icon} />
+                </span>
+              </button>
+            ))}
+        </div>
+
+        <div className="topbar-actions">
+          <button className="primary-button" onClick={() => void runChecks()}>
+            <Icon name="play" size={11} />
+            Run
+          </button>
+          <button
+            className={`toolbar-button ${consoleOpen ? "active" : ""}`}
+            onClick={() => setConsoleOpen((open) => !open)}
+            title="Toggle console (⌘J)"
+            aria-pressed={consoleOpen}
+          >
+            <Icon name="terminal" size={13} />
+          </button>
+          <button
+            className={`toolbar-button ${assistantOpen ? "active" : ""}`}
+            onClick={() => setAssistantOpen((open) => !open)}
+            title="Toggle assistant (⌘I)"
+            aria-pressed={assistantOpen}
+          >
+            <Icon name="sparkles" size={13} />
+          </button>
+        </div>
+      </header>
 
       <div className="workspace">
         <Sidebar
@@ -863,74 +945,6 @@ TNS  0.00 ns
         )}
 
         <section className="content">
-          <div className="tabstrip" role="tablist" aria-label="Open views">
-            {(["schematic", "layout", "plots", "verification", "constraints"] as SurfaceId[]).map(
-              (tabId) => {
-                const isActive = view.kind === "surface" && surface === tabId;
-                return (
-                  <button
-                    key={tabId}
-                    className={`editor-tab surface-tab ${isActive ? "active" : ""}`}
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => navigate(tabId)}
-                  >
-                    <Icon name={surfaceMeta[tabId].icon} size={12} />
-                    <span>{surfaceMeta[tabId].label}</span>
-                  </button>
-                );
-              },
-            )}
-            {!["schematic", "layout", "plots", "verification", "constraints"].includes(surface) && (
-              <button
-                className={`editor-tab surface-tab ${view.kind === "surface" ? "active" : ""}`}
-                role="tab"
-                aria-selected={view.kind === "surface"}
-                onClick={() => setView({ kind: "surface", id: surface })}
-              >
-                <Icon name={surfaceMeta[surface].icon} size={12} />
-                <span>{surfaceMeta[surface].label}</span>
-              </button>
-            )}
-
-            {openFiles.map((path) => {
-              const file = files.find((item) => item.path === path);
-              const isActive = view.kind === "file" && view.path === path;
-              return (
-                <div className={`editor-tab file-tab ${isActive ? "active" : ""}`} key={path}>
-                  <button
-                    className="file-tab-main"
-                    role="tab"
-                    aria-selected={isActive}
-                    onClick={() => setView({ kind: "file", path })}
-                    title={path}
-                  >
-                    <Icon name={file?.readOnly ? "lock" : "file"} size={12} />
-                    <span>{path.split("/").pop()}</span>
-                    {dirtyFiles.has(path) && <i className="dirty-dot" />}
-                  </button>
-                  <button
-                    className="tab-close"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      closeFile(path);
-                    }}
-                    aria-label={`Close ${path}`}
-                    title={`Close ${path}`}
-                  >
-                    <Icon name="close" size={11} />
-                  </button>
-                </div>
-              );
-            })}
-
-            <div className="tabstrip-spacer" />
-            <span className="tabstrip-meta">
-              <span className="status-dot passed" />
-              {revision}
-            </span>
-          </div>
-
           <div className={`view ${isFill ? "view-fill" : ""}`} ref={viewRef}>
             {renderSurface()}
           </div>
@@ -987,21 +1001,20 @@ TNS  0.00 ns
 
       <footer className="ide-statusbar" aria-label="Workbench status bar">
         <div className="ide-statusbar-left">
-          <span className="ide-status-item">
-            <span className="status-dot passed" />
-            {ENGINE_SCHEMA}
-          </span>
+          <button
+            className="ide-status-item"
+            onClick={() => setConsoleOpen((open) => !open)}
+          >
+            <Icon name="terminal" size={11} />
+            Console {jobs.length > 0 ? `(${jobs.length})` : ""}
+          </button>
           <span className="ide-status-item">rev:{revision}</span>
-          <span className="ide-status-item">events:{eventCursor}</span>
-          <span className="ide-status-item">{lastRewind}</span>
         </div>
         <div className="ide-statusbar-right">
-          <span className="ide-status-item">PDK: {constraints.pdk.toUpperCase()}</span>
+          <span className="ide-status-item">{constraints.pdk.toUpperCase()}</span>
           <span className="ide-status-item">
-            Gates: {effectiveChecks.filter((c) => c.status === "passed").length} PASS · {failed} FAIL · {unsupported} NOT_RUN/UNSUP
+            {effectiveChecks.filter((c) => c.status === "passed").length} PASS · {failed} FAIL
           </span>
-          <span className="ide-status-item">Grid: On</span>
-          <span className="ide-status-item">Snap: On</span>
         </div>
       </footer>
 

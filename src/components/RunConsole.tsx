@@ -31,6 +31,8 @@ export function RunConsole({
     if (element) element.scrollTop = element.scrollHeight;
   }, [selectedJob?.id, selectedJob?.logs.length]);
 
+  if (!open) return null;
+
   return (
     <section className={`run-console ${open ? "open" : "collapsed"}`} style={{ height: open ? height : 30 }}>
       <div className="console-header">

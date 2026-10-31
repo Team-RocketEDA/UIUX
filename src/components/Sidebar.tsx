@@ -104,24 +104,25 @@ export function Sidebar({
   const renderFolder = (node: FolderNode, depth: number) => {
     const isCollapsed = collapsed.has(node.path);
     return (
-      <div key={node.path}>
-        <button
-          className="tree-folder"
-          style={{ paddingLeft: 8 + depth * 12 }}
-          onClick={() => toggleFolder(node.path)}
-          aria-expanded={!isCollapsed}
-        >
-          <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={12} />
-          <span>{node.name}</span>
-          <small>{countFiles(node)}</small>
-        </button>
+      <div key={node.path || "root"}>
+        {node.path && (
+          <button
+            className="tree-folder"
+            style={{ paddingLeft: 8 + (depth - 1) * 12 }}
+            onClick={() => toggleFolder(node.path)}
+            aria-expanded={!isCollapsed}
+          >
+            <Icon name={isCollapsed ? "chevronRight" : "chevronDown"} size={11} />
+            <span>{node.name}</span>
+          </button>
+        )}
         {!isCollapsed && (
           <>
             {node.files.map((file) => (
               <button
                 key={file.path}
                 className={`tree-file ${openFilePath === file.path ? "selected" : ""}`}
-                style={{ paddingLeft: 27 + depth * 12 }}
+                style={{ paddingLeft: 10 + depth * 12 }}
                 onClick={() => onOpenFile(file.path)}
                 title={file.path}
               >

@@ -765,89 +765,14 @@ export function SchematicSurface({
 
   return (
     <div className="fill-surface schematic-surface">
-      <SurfaceHeader
-        eyebrow="DESIGN / HIERARCHICAL SCHEMATIC & SYMBOLS"
-        title={
-          mode === "viewer"
-            ? "Schematic workbench"
-            : mode === "symbols"
-              ? "KiCad symbol editor"
-              : "PDK xschem .sym parser (sky130A · I29)"
-        }
-        subtitle={
-          mode === "viewer"
-            ? "Source-backed hierarchy (top, GPIO RTL, transistor-level Miller op-amp). Drag to pan, scroll to zoom, or double-click a SHEET block."
-            : mode === "symbols"
-              ? "Inspect, customize, and extend schematic symbols (MOSFETs, passives, op-amps, photonic blocks) and instantiate them onto any sheet."
-              : "Verbatim xschem .sym byte parser with pre-parse SHA-256 verification and explicit layer-5 pin extraction."
-        }
-        actions={
-          <>
-            <div className="mode-toggle-group" role="tablist" aria-label="Schematic workbench mode">
-              <button
-                role="tab"
-                aria-selected={mode === "viewer"}
-                className={`mode-toggle-btn ${mode === "viewer" ? "active" : ""}`}
-                onClick={() => setMode("viewer")}
-              >
-                <Icon name="schematic" size={12} />
-                Hierarchy viewer
-              </button>
-              <button
-                role="tab"
-                aria-selected={mode === "symbols"}
-                className={`mode-toggle-btn ${mode === "symbols" ? "active" : ""}`}
-                onClick={() => setMode("symbols")}
-              >
-                <Icon name="sliders" size={12} />
-                Symbol editor ({symbols.length})
-              </button>
-              <button
-                role="tab"
-                aria-selected={mode === "pdk_sym"}
-                className={`mode-toggle-btn ${mode === "pdk_sym" ? "active" : ""}`}
-                onClick={() => setMode("pdk_sym")}
-              >
-                <Icon name="verification" size={12} />
-                PDK .sym ({symFixtures.length})
-              </button>
-            </div>
-            <button
-              className="secondary-button"
-              onClick={() => onOpenFile(sourcePathForSheet)}
-            >
-              <Icon name="code" size={13} />
-              View source
-            </button>
-          </>
-        }
-      />
-
       {mode === "viewer" ? (
         <div className="panel diagram-panel">
           <div className="diagram-toolbar">
-            <nav className="breadcrumb" aria-label="Schematic hierarchy">
-              <button
-                onClick={() => openSheet("top")}
-                aria-current={sheetId === "top" ? "page" : undefined}
-              >
-                top
-              </button>
-              {sheetId !== "top" && (
-                <>
-                  <Icon name="chevronRight" size={11} />
-                  <button onClick={() => openSheet(sheetId)} aria-current="page">
-                    {sheetId}
-                  </button>
-                </>
-              )}
-            </nav>
-
             <div className="sheet-pills" role="group" aria-label="Quick sheet switch">
               {[
-                { id: "top", label: "top · SoC" },
-                { id: "gpio", label: "gpio · digital" },
-                { id: "opamp", label: "opamp · SPICE" },
+                { id: "top", label: "top" },
+                { id: "gpio", label: "gpio" },
+                { id: "opamp", label: "opamp" },
               ].map((item) => (
                 <button
                   key={item.id}
@@ -859,37 +784,15 @@ export function SchematicSurface({
               ))}
             </div>
 
-            <span className="diagram-hint">
-              {selectedNet
-                ? `Net highlighted: ${selectedNet} (click canvas to clear)`
-                : "Drag canvas to pan · Wheel to zoom · Double-click SHEET ↗"}
-            </span>
-
-            <div className="zoom-group">
-              <button
-                className="icon-button"
-                onClick={() => setZoom((value) => Math.max(0.6, Number((value - 0.2).toFixed(2))))}
-                title="Zoom out (-)"
-                aria-label="Zoom out"
-              >
-                <Icon name="zoomOut" size={14} />
-              </button>
-              <span>{Math.round(zoom * 100)}%</span>
-              <button
-                className="icon-button"
-                onClick={() => setZoom((value) => Math.min(2.5, Number((value + 0.2).toFixed(2))))}
-                title="Zoom in (+)"
-                aria-label="Zoom in"
-              >
-                <Icon name="zoomIn" size={14} />
-              </button>
-              <button
-                className="icon-button"
-                onClick={resetView}
-                title="Fit to view (F)"
-                aria-label="Fit to view"
-              >
-                <Icon name="fit" size={14} />
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+              <div className="mode-toggle-group" role="tablist" aria-label="Schematic workbench mode">
+                <button role="tab" aria-selected={true} className="mode-toggle-btn active" onClick={() => setMode("viewer")}>Schematic</button>
+                <button role="tab" aria-selected={false} className="mode-toggle-btn" onClick={() => setMode("symbols")}>Symbols</button>
+                <button role="tab" aria-selected={false} className="mode-toggle-btn" onClick={() => setMode("pdk_sym")}>.sym</button>
+              </div>
+              <span style={{ fontSize: 10, color: "var(--muted)", fontFamily: "var(--mono)" }}>{Math.round(zoom * 100)}%</span>
+              <button className="icon-button" onClick={resetView} title="Fit to view" aria-label="Fit to view">
+                <Icon name="fit" size={13} />
               </button>
             </div>
           </div>
@@ -914,17 +817,11 @@ export function SchematicSurface({
               >
                 <defs>
                   <pattern id="schematic-grid" width="20" height="20" patternUnits="userSpaceOnUse">
-                    <path d="M20 0H0V20" fill="none" stroke="#1a2a3a" strokeWidth=".6" />
+                    <path d="M20 0H0V20" fill="none" stroke="#16161c" strokeWidth=".6" />
                   </pattern>
                 </defs>
-                <rect width={WIDTH} height={HEIGHT} fill="#0b121a" />
-                <rect width={WIDTH} height={HEIGHT} fill="url(#schematic-grid)" opacity=".65" />
-                <text className="sheet-title" x="40" y="46">
-                  {sheet.name}
-                </text>
-                <text className="sheet-subtitle" x="40" y="63">
-                  {sheet.path} · {sourcePathForSheet} · sky130
-                </text>
+                <rect x="-2000" y="-2000" width="6000" height="6000" fill="#09090b" />
+                <rect x="-2000" y="-2000" width="6000" height="6000" fill="url(#schematic-grid)" opacity=".75" />
 
                 {sheet.boundaryPorts.map((port) => (
                   <g key={port.name} className="boundary-port">
@@ -981,12 +878,6 @@ export function SchematicSurface({
                   />
                 ))}
               </svg>
-              <div className="diagram-overlay">
-                <span className="overlay-chip">SOURCE: {sourcePathForSheet}</span>
-                <span className="overlay-chip muted">
-                  {sheetId === "opamp" ? "TRANSISTOR LEVEL (SPICE)" : "HIERARCHICAL SCHEMATIC"}
-                </span>
-              </div>
             </div>
 
             {selected && (
@@ -1060,11 +951,12 @@ export function SchematicSurface({
       ) : mode === "symbols" ? (
         <div className="panel diagram-panel symbol-editor-panel">
           <div className="diagram-toolbar">
-            <span className="eyebrow">KICAD-STYLE SYMBOL LIBRARY</span>
-            <span className="diagram-hint">
-              Select a component symbol to inspect pins, edit parameters, or place onto {sheet.path}
-            </span>
-            <div className="zoom-group">
+            <div className="mode-toggle-group" role="tablist" aria-label="Schematic workbench mode">
+              <button role="tab" aria-selected={false} className="mode-toggle-btn" onClick={() => setMode("viewer")}>Schematic</button>
+              <button role="tab" aria-selected={true} className="mode-toggle-btn active" onClick={() => setMode("symbols")}>Symbols</button>
+              <button role="tab" aria-selected={false} className="mode-toggle-btn" onClick={() => setMode("pdk_sym")}>.sym</button>
+            </div>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
               <button className="secondary-button compact-btn" onClick={createCustomSymbol}>
                 <Icon name="plus" size={12} />
                 New symbol
@@ -1263,11 +1155,12 @@ export function SchematicSurface({
       ) : (
         <div className="panel diagram-panel symbol-editor-panel">
           <div className="diagram-toolbar">
-            <span className="eyebrow">XSCHEM .SYM CONTRACT (§10.2 · I29)</span>
-            <span className="diagram-hint">
-              PDK: {activeSymFixture.pdkId} @ {activeSymFixture.pdkRevision.slice(0, 10)}… · SHA-256 verified before parse
-            </span>
-            <div className="zoom-group">
+            <div className="mode-toggle-group" role="tablist" aria-label="Schematic workbench mode">
+              <button role="tab" aria-selected={false} className="mode-toggle-btn" onClick={() => setMode("viewer")}>Schematic</button>
+              <button role="tab" aria-selected={false} className="mode-toggle-btn" onClick={() => setMode("symbols")}>Symbols</button>
+              <button role="tab" aria-selected={true} className="mode-toggle-btn active" onClick={() => setMode("pdk_sym")}>.sym</button>
+            </div>
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
               <button
                 className={`secondary-button compact-btn ${corruptHashMode ? "danger" : ""}`}
                 onClick={() => setCorruptHashMode((prev) => !prev)}
