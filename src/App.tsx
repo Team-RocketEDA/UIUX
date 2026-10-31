@@ -16,13 +16,17 @@ import {
   initialChecks,
   initialConstraints,
   initialFiles,
-  initialRevision,
   project,
   toolRegistry,
 } from "./data";
+import {
+  createEngineClient,
+  ENGINE_SCHEMA,
+  type EngineClient,
+  type RunOperation,
+} from "./engine";
 import { useAgent } from "./agent/useAgent";
 import { buildVerificationReport, downloadText } from "./utils";
-import { ActivityBar } from "./components/ActivityBar";
 import { AssistantPanel, type AssistantTab } from "./components/AssistantPanel";
 import { ConstraintsSurface } from "./components/ConstraintsSurface";
 import { ExportSurface } from "./components/ExportSurface";
@@ -56,8 +60,6 @@ const fillViews = new Set<SurfaceId>(["schematic", "layout", "terminal"]);
 const clamp = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, value));
 
-const makeRevision = () => Math.random().toString(16).slice(2, 9);
-
 const GPIO_COMBINATIONAL = `  always_comb begin
     readback = read_pending ? bus_data : gpio_in;
   end`;
@@ -86,23 +88,37 @@ ${constraints.requiredChecks.map((id) => `    - ${id}`).join("\n")}
   autonomy: ${constraints.autonomy}
 `;
 
+const toolToEngineOp: Record<string, RunOperation> = {
+  klayout: "generate_views",
+  magic: "run_drc",
+  netgen: "run_lvs",
+  verilator: "run_hdl_test",
+  librelane: "run_digital_flow",
+  opensta: "run_timing",
+  ngspice: "run_spice",
+  sax: "run_optical",
+  meow: "run_optical",
+};
+
 export function App() {
   const [files, setFiles] = useState<ProjectFile[]>(initialFiles);
   const [constraints, setConstraints] = useState<ConstraintSet>(initialConstraints);
   const [checks, setChecks] = useState<Check[]>(initialChecks);
-  const [revision, setRevision] = useState(initialRevision);
+  const [revision, setRevision] = useState("p12");
   const [iteration, setIteration] = useState(3);
   const [timingFixed, setTimingFixed] = useState(false);
+  const [eventCursor, setEventCursor] = useState(0);
+  const [lastRewind, setLastRewind] = useState("rewind:p12");
 
-  const [surface, setSurface] = useState<SurfaceId>("overview");
-  const [view, setView] = useState<ActiveView>({ kind: "surface", id: "overview" });
+  const [surface, setSurface] = useState<SurfaceId>("schematic");
+  const [view, setView] = useState<ActiveView>({ kind: "surface", id: "schematic" });
   const [openFiles, setOpenFiles] = useState<string[]>(["design/digital/top.sv"]);
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
-  const [sidebarWidth, setSidebarWidth] = useState(244);
+  const [sidebarWidth, setSidebarWidth] = useState(200);
   const [assistantOpen, setAssistantOpen] = useState(true);
-  const [assistantWidth, setAssistantWidth] = useState(356);
+  const [assistantWidth, setAssistantWidth] = useState(292);
   const [assistantTab, setAssistantTab] = useState<AssistantTab>("chat");
 
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -114,6 +130,18 @@ export function App() {
   const [toast, setToast] = useState<string | null>(null);
   const viewRef = useRef<HTMLDivElement>(null);
   const agent = useAgent();
+  const engineRef = useRef<EngineClient | null>(null);
+  if (!engineRef.current) {
+    engineRef.current = createEngineClient({
+      projectId: project.name,
+      initialRevision: "p12",
+      initialDocs: initialFiles
+        .filter((f) => !f.path.startsWith("results/"))
+        .map((f) => ({ path: f.path, content: f.content })),
+      baseUrl: import.meta.env.VITE_ROCKET_ENGINE_URL || undefined,
+    });
+  }
+  const engine = engineRef.current;
 
   // Map live/replay Rocket Fuel check verdicts onto workbench checks when present.
   const liveCheckEntries = Object.entries(agent.view.checks);
@@ -187,14 +215,48 @@ export function App() {
     setDirtyFiles((previous) => new Set(previous).add(path));
   };
 
-  const saveFile = (path: string) => {
+  const syncEngineEvents = async () => {
+    const evRes = await engine.get_events_since({ project_id: project.name, cursor: eventCursor });
+    if (evRes.ok) {
+      setEventCursor(evRes.data.next_cursor);
+      setRevision(evRes.data.current_revision);
+    } else if (evRes.code === "resync_required") {
+      const snap = await engine.get_project_snapshot({ project_id: project.name });
+      if (snap.ok) {
+        setRevision(snap.data.current_revision);
+        setEventCursor(snap.data.cursor);
+      }
+    }
+  };
+
+  const saveFile = async (path: string) => {
+    const target = files.find((item) => item.path === path);
+    if (!target) return;
+    const writeRes = await engine.write_doc({
+      project_id: project.name,
+      path,
+      content: target.content,
+      expected_revision: revision,
+      actor: "human",
+    });
+    if (!writeRes.ok) {
+      if (writeRes.code === "revision_conflict") {
+        await syncEngineEvents();
+        notify(`Revision conflict on ${path}; resynced head to ${writeRes.current_revision ?? "latest"}.`);
+        return;
+      }
+      notify(`Engine refused write_doc on ${path}: ${writeRes.message}`);
+      return;
+    }
     setDirtyFiles((previous) => {
       const next = new Set(previous);
       next.delete(path);
       return next;
     });
-    setRevision(makeRevision());
-    notify(`${path} saved to the project working tree.`);
+    setRevision(writeRes.data.revision);
+    setLastRewind(writeRes.data.rewind_handle);
+    await syncEngineEvents();
+    notify(`${path} committed via write_doc → rev:${writeRes.data.revision} (${writeRes.data.rewind_handle}).`);
   };
 
   const startJob = (
@@ -263,16 +325,40 @@ export function App() {
     return id;
   };
 
-  const runTool = (toolId: string) => {
+  const runTool = async (toolId: string) => {
     const tool = toolRegistry.find((item) => item.id === toolId);
     if (!tool) return;
     if (!tool.available) {
       notify(`${tool.label} is unavailable: ${tool.unavailableReason}`);
       return;
     }
+    const operation: RunOperation = toolToEngineOp[toolId] ?? "run_syntax";
+    const requestId = `req-${toolId}-${Date.now()}`;
+    const ackRes = await engine.submit({
+      schema: ENGINE_SCHEMA,
+      request_id: requestId,
+      project_id: project.name,
+      expected_revision: revision,
+      operation,
+      actor: "human",
+      arguments: { tool: toolId },
+    });
+    const runRes = ackRes.ok
+      ? await engine.run_job({ project_id: project.name, request_id: ackRes.data.request_id })
+      : null;
+    await syncEngineEvents();
+    const contractLogs =
+      ackRes.ok && runRes?.ok
+        ? [
+            `[v0.2 submit] request_id=${ackRes.data.request_id} → run_id=${ackRes.data.run_id} (rev:${ackRes.data.current_revision})`,
+            ...runRes.data.measurements.map(
+              (m) => `[measure] ${m.name}: ${m.value} ${m.unit} (target ${m.target}, margin ${m.margin >= 0 ? "+" : ""}${m.margin}) → ${m.status}`,
+            ),
+          ]
+        : [];
     const outcome = toolId === "opensta" && !timingFixed ? "failed" : "passed";
-    startJob(`${tool.label} run`, tool.label, tool.logs, outcome);
-    notify(`${tool.label} queued through the local runner.`);
+    startJob(`${tool.label} (${operation})`, tool.label, [...contractLogs, ...tool.logs], outcome);
+    notify(`${tool.label} executed via two-phase submit → run_job (${requestId}).`);
   };
 
   const runScript = (script: string) => {
@@ -290,10 +376,24 @@ export function App() {
     notify("Python job queued through the shared runner interface.");
   };
 
-  const runChecks = () => {
+  const runChecks = async () => {
     if (checks.some((check) => check.status === "running")) return;
     const unsupportedCount = checks.filter((check) => check.status === "unsupported").length;
     const willFail = !timingFixed;
+    const requestId = `req-checks-${Date.now()}`;
+    const ackRes = await engine.submit({
+      schema: ENGINE_SCHEMA,
+      request_id: requestId,
+      project_id: project.name,
+      expected_revision: revision,
+      operation: "run_timing",
+      actor: "human",
+      arguments: { suite: "required_gates" },
+    });
+    if (ackRes.ok) {
+      await engine.run_job({ project_id: project.name, request_id: ackRes.data.request_id });
+      await syncEngineEvents();
+    }
 
     setChecks((previous) =>
       previous.map((check) =>
@@ -307,6 +407,9 @@ export function App() {
       "Run supported verification gates",
       "runner",
       [
+        ackRes.ok
+          ? `[v0.2 submit → run_job] request_id=${ackRes.data.request_id} · snapshot=${ackRes.data.snapshot_id} · rev:${ackRes.data.current_revision}`
+          : "Loaded project snapshot",
         "Loaded constraints.yaml and pinned workflow revisions",
         "Verilator: 128 / 128 functional tests passed",
         `LibreLane: routed design reused at revision ${revision}`,
@@ -368,7 +471,23 @@ export function App() {
       return false;
     }
 
-    const nextRevision = makeRevision();
+    const repairedContent = gpioFile.content.replace(GPIO_COMBINATIONAL, GPIO_REGISTERED);
+    const nextRevNum = Number.parseInt(revision.replace(/^p/, ""), 10);
+    const nextRevision = Number.isFinite(nextRevNum) ? `p${nextRevNum + 1}` : "p13";
+    void engine
+      .apply_mutations({
+        project_id: project.name,
+        expected_revision: revision,
+        actor: "rocket-fuel",
+        mutations: [{ op: "write", path: "design/digital/gpio.sv", content: repairedContent }],
+      })
+      .then(async (batchRes) => {
+        if (batchRes.ok) {
+          setRevision(batchRes.data.revision);
+          setLastRewind(batchRes.data.rewind_handle);
+          await syncEngineEvents();
+        }
+      });
     setTimingFixed(true);
     setIteration((previous) => previous + 1);
     setRevision(nextRevision);
@@ -377,7 +496,7 @@ export function App() {
         if (file.path === "design/digital/gpio.sv") {
           return {
             ...file,
-            content: file.content.replace(GPIO_COMBINATIONAL, GPIO_REGISTERED),
+            content: repairedContent,
           };
         }
         if (file.path === "results/timing.rpt") {
@@ -452,16 +571,27 @@ TNS  0.00 ns
     return true;
   };
 
-  const saveConstraints = (next: ConstraintSet) => {
+  const saveConstraints = async (next: ConstraintSet) => {
+    const nextYaml = constraintsToYaml(next);
     setConstraints(next);
     setFiles((previous) =>
       previous.map((file) =>
         file.path === "constraints.yaml"
-          ? { ...file, content: constraintsToYaml(next) }
+          ? { ...file, content: nextYaml }
           : file,
       ),
     );
-    setRevision(makeRevision());
+    const batchRes = await engine.apply_mutations({
+      project_id: project.name,
+      expected_revision: revision,
+      actor: "human",
+      mutations: [{ op: "write", path: "constraints.yaml", content: nextYaml }],
+    });
+    if (batchRes.ok) {
+      setRevision(batchRes.data.revision);
+      setLastRewind(batchRes.data.rewind_handle);
+      await syncEngineEvents();
+    }
     notify("constraints.yaml saved. Targets and gates are now explicit for the agent and runner.");
   };
 
@@ -700,6 +830,8 @@ TNS  0.00 ns
       <Toolbelt
         tools={toolRegistry}
         onRunTool={runTool}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen((open) => !open)}
         onToggleConsole={() => setConsoleOpen((open) => !open)}
         consoleOpen={consoleOpen}
         onToggleAssistant={() => setAssistantOpen((open) => !open)}
@@ -707,15 +839,6 @@ TNS  0.00 ns
       />
 
       <div className="workspace">
-        <ActivityBar
-          surface={surface}
-          sidebarOpen={sidebarOpen}
-          onToggleSidebar={() => setSidebarOpen((open) => !open)}
-          onNavigate={navigate}
-          assistantOpen={assistantOpen}
-          onOpenAssistant={openAssistant}
-        />
-
         <Sidebar
           files={files}
           dirtyFiles={dirtyFiles}
@@ -741,15 +864,34 @@ TNS  0.00 ns
 
         <section className="content">
           <div className="tabstrip" role="tablist" aria-label="Open views">
-            <button
-              className={`editor-tab surface-tab ${view.kind === "surface" ? "active" : ""}`}
-              role="tab"
-              aria-selected={view.kind === "surface"}
-              onClick={() => setView({ kind: "surface", id: surface })}
-            >
-              <Icon name={surfaceMeta[surface].icon} size={13} />
-              <span>{surfaceMeta[surface].label}</span>
-            </button>
+            {(["schematic", "layout", "plots", "verification", "constraints"] as SurfaceId[]).map(
+              (tabId) => {
+                const isActive = view.kind === "surface" && surface === tabId;
+                return (
+                  <button
+                    key={tabId}
+                    className={`editor-tab surface-tab ${isActive ? "active" : ""}`}
+                    role="tab"
+                    aria-selected={isActive}
+                    onClick={() => navigate(tabId)}
+                  >
+                    <Icon name={surfaceMeta[tabId].icon} size={12} />
+                    <span>{surfaceMeta[tabId].label}</span>
+                  </button>
+                );
+              },
+            )}
+            {!["schematic", "layout", "plots", "verification", "constraints"].includes(surface) && (
+              <button
+                className={`editor-tab surface-tab ${view.kind === "surface" ? "active" : ""}`}
+                role="tab"
+                aria-selected={view.kind === "surface"}
+                onClick={() => setView({ kind: "surface", id: surface })}
+              >
+                <Icon name={surfaceMeta[surface].icon} size={12} />
+                <span>{surfaceMeta[surface].label}</span>
+              </button>
+            )}
 
             {openFiles.map((path) => {
               const file = files.find((item) => item.path === path);
@@ -842,6 +984,26 @@ TNS  0.00 ns
           agent={agent}
         />
       </div>
+
+      <footer className="ide-statusbar" aria-label="Workbench status bar">
+        <div className="ide-statusbar-left">
+          <span className="ide-status-item">
+            <span className="status-dot passed" />
+            {ENGINE_SCHEMA}
+          </span>
+          <span className="ide-status-item">rev:{revision}</span>
+          <span className="ide-status-item">events:{eventCursor}</span>
+          <span className="ide-status-item">{lastRewind}</span>
+        </div>
+        <div className="ide-statusbar-right">
+          <span className="ide-status-item">PDK: {constraints.pdk.toUpperCase()}</span>
+          <span className="ide-status-item">
+            Gates: {effectiveChecks.filter((c) => c.status === "passed").length} PASS · {failed} FAIL · {unsupported} NOT_RUN/UNSUP
+          </span>
+          <span className="ide-status-item">Grid: On</span>
+          <span className="ide-status-item">Snap: On</span>
+        </div>
+      </footer>
 
       {shortcutsOpen && (
         <div

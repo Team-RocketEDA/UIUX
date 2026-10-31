@@ -72,6 +72,23 @@ export function Sidebar({
   width: number;
   hidden: boolean;
 }) {
+  const [mode, setMode] = useState<"explorer" | "library">("explorer");
+  const [library, setLibrary] = useState<"standard" | "pdk">("standard");
+  const [query, setQuery] = useState("");
+  const components = library === "pdk" ? [
+    ["sky130_fd_pr__nfet_01v8", "NMOS · 1.8 V"],
+    ["sky130_fd_pr__pfet_01v8", "PMOS · 1.8 V"],
+    ["sky130_fd_pr__res_high_po", "High-resistance poly"],
+    ["sky130_fd_pr__cap_mim_m3_1", "MIM capacitor · M3"],
+  ] : [
+    ["ota_5t", "5-transistor OTA · reference"],
+    ["rv32i_core", "RISC-V · digital IP"],
+    ["mzi_1550", "Mach-Zehnder · 1550 nm"],
+    ["opamp_2stage", "Two-stage op-amp"],
+    ["gpio_controller", "GPIO · digital IP"],
+    ["resistor", "Passive · R"], ["capacitor", "Passive · C"],
+  ];
+  const visibleComponents = components.filter((entry) => entry.join(" ").toLowerCase().includes(query.toLowerCase()));
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const tree = buildTree(files);
 
@@ -128,45 +145,26 @@ export function Sidebar({
 
   return (
     <aside className="sidebar" style={{ width }} hidden={hidden}>
-      <div className="sidebar-section">
-        <div className="sidebar-heading">WORKBENCH</div>
-        <nav className="surface-nav" aria-label="Workbench surfaces">
-          {surfaces.map((item) => (
-            <button
-              key={item.id}
-              className={`surface-nav-item ${surface === item.id ? "active" : ""}`}
-              onClick={() => onNavigate(item.id)}
-              aria-current={surface === item.id ? "page" : undefined}
-            >
-              <Icon name={item.icon} size={15} />
-              <span>{item.label}</span>
-              {item.id === "verification" && issueCount > 0 && (
-                <span className="nav-alert" title={`${issueCount} checks need attention`}>
-                  {issueCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </nav>
+      <div className="sidebar-tabs" role="tablist" aria-label="Sidebar mode">
+        {(["explorer", "library"] as const).map((tab) => <button key={tab} role="tab" aria-selected={mode === tab} className={mode === tab ? "active" : ""} onClick={() => setMode(tab)}>{tab === "explorer" ? "Files" : "Components"}</button>)}
       </div>
-
-      <div className="sidebar-section files-section">
-        <div className="sidebar-heading">
-          <span>PROJECT FILES</span>
-          <span className="sidebar-count">{files.length}</span>
+      {mode === "library" ? <section className="library-browser" aria-label="Component library">
+        <div className="library-tabs" role="tablist" aria-label="Library collection">
+          <button role="tab" aria-selected={library === "standard"} className={library === "standard" ? "active" : ""} onClick={() => setLibrary("standard")}>Standard</button>
+          <button role="tab" aria-selected={library === "pdk"} className={library === "pdk" ? "active" : ""} onClick={() => setLibrary("pdk")}>PDK (sky130A)</button>
         </div>
+        <input className="library-search" aria-label="Search components" placeholder="Filter symbols / cells…" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <div className="library-list">{visibleComponents.map(([name, detail]) => <button className="library-component" key={name} title={`${name} — open schematic`} onClick={() => onNavigate("schematic")}>
+          <Icon name={name.includes("rv32") || name.includes("gpio") ? "code" : "schematic"} size={14} />
+          <span><b>{name}</b><small>{detail}</small></span>
+        </button>)}</div>
+        {!visibleComponents.length && <p className="library-empty">No matching symbols.</p>}
+      </section> : <>
+      <div className="sidebar-section files-section">
         <div className="file-tree">{renderFolder(tree, 0)}</div>
       </div>
 
-      <button className="sidebar-footer" onClick={() => onNavigate("constraints")}>
-        <span className="pdk-mark">S</span>
-        <span className="sidebar-footer-copy">
-          <span className="eyebrow">ACTIVE PDK</span>
-          <b>{pdkLabel(pdk)}</b>
-          <small>{domains.map((domain) => domain[0].toUpperCase() + domain.slice(1)).join(" · ")}</small>
-        </span>
-        <Icon name="chevronRight" size={14} />
-      </button>
+      </>}
     </aside>
   );
 }

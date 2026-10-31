@@ -16,13 +16,15 @@ export function SourceSurface({
   onSave: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLPreElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
   const [cursor, setCursor] = useState({ line: 1, column: 1 });
+  const tokens = file.content.split(/("(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'|\/\/[^\n]*|#[^\n]*|\b(?:module|endmodule|input|output|wire|logic|always_ff|assign|if|else|begin|end|import|from|def|return|class|True|False|None)\b|\b\d+(?:\.\d+)?(?:[eE][+-]?\d+)?\b)/g);
   const lineCount = file.content.split("\n").length;
 
   const updateCursor = () => {
     const position = textareaRef.current?.selectionStart ?? 0;
-    const before = file.content.slice(0, position);
+    const before = (textareaRef.current?.value ?? file.content).slice(0, position);
     const lines = before.split("\n");
     setCursor({ line: lines.length, column: lines[lines.length - 1].length + 1 });
   };
@@ -64,6 +66,7 @@ export function SourceSurface({
         }
       />
 
+      <div className="source-breadcrumb" aria-label="File breadcrumb"><Icon name="folder" size={12} />{file.path.split("/").map((segment, index) => <span key={index}>{index > 0 && <Icon name="chevronRight" size={10} />}{segment}</span>)}</div>
       <div className="panel code-panel">
         <div className="code-panel-bar">
           <span className="code-language">{file.language}</span>
@@ -77,6 +80,8 @@ export function SourceSurface({
               <span key={index}>{index + 1}</span>
             ))}
           </div>
+          <div className="code-input-stack">
+          <pre className="code-highlight" ref={highlightRef} aria-hidden="true">{tokens.map((token, index) => <span key={index} className={/^['"]/.test(token) ? "syntax-string" : /^(?:#|\/\/)/.test(token) ? "syntax-comment" : /^\d/.test(token) ? "syntax-number" : index % 2 ? "syntax-keyword" : undefined}>{token}</span>)}{"\n"}</pre>
           <textarea
             ref={textareaRef}
             className="code-textarea"
@@ -84,10 +89,14 @@ export function SourceSurface({
             readOnly={file.readOnly}
             spellCheck={false}
             aria-label={`Edit ${file.path}`}
-            onChange={(event) => onChange(event.target.value)}
+            onChange={(event) => { onChange(event.target.value); updateCursor(); }}
             onScroll={() => {
               if (gutterRef.current && textareaRef.current) {
                 gutterRef.current.scrollTop = textareaRef.current.scrollTop;
+              }
+              if (highlightRef.current && textareaRef.current) {
+                highlightRef.current.scrollTop = textareaRef.current.scrollTop;
+                highlightRef.current.scrollLeft = textareaRef.current.scrollLeft;
               }
             }}
             onSelect={updateCursor}
@@ -98,8 +107,16 @@ export function SourceSurface({
               }
             }}
           />
+          </div>
+          <aside className="code-minimap" aria-label="Source outline">{file.content.split("\n").map((line, index) => <button key={index} title={`Line ${index + 1}: ${line.slice(0, 80)}`} aria-label={`Go to line ${index + 1}`} onClick={() => {
+            const editor = textareaRef.current;
+            if (!editor) return;
+            const offset = file.content.split("\n").slice(0, index).reduce((sum, part) => sum + part.length + 1, 0);
+            editor.focus(); editor.setSelectionRange(offset, offset); editor.scrollTop = Math.max(0, index * 20 - editor.clientHeight / 2); editor.dispatchEvent(new Event("scroll")); updateCursor();
+          }}><i style={{ width: `${Math.min(100, line.length * 1.5)}%` }} /></button>)}</aside>
         </div>
         <div className="code-statusbar">
+          <span className="diagnostic-status" title="No language server is attached"><Icon name="warning" size={11} />Diagnostics: not connected</span>
           <span>Ln {cursor.line}, Col {cursor.column}</span>
           <span>Spaces: 2</span>
           <span>LF</span>

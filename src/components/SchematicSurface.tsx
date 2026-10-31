@@ -4,6 +4,7 @@ import type {
   WheelEvent as ReactWheelEvent,
 } from "react";
 import { initialSymbolLibrary, schematicSheets } from "../data";
+import { getSky130SymFixtures, parseSymAsset, type SymRenderModel } from "../sym";
 import type {
   CircuitSymbolDef,
   Domain,
@@ -427,6 +428,134 @@ function SymbolEditorCanvas({ symbol }: { symbol: CircuitSymbolDef }) {
   );
 }
 
+function XschemSymCanvas({ model }: { model: SymRenderModel }) {
+  const { bbox, lines, rects, arcs, polygons, pins, texts } = model;
+  const padX = Math.max(78, Math.round(bbox.width * 0.45));
+  const padY = Math.max(48, Math.round(bbox.height * 0.32));
+  const vx = (bbox.width > 0 ? bbox.x1 : -100) - padX;
+  const vy = (bbox.height > 0 ? bbox.y1 : -100) - padY;
+  const vw = Math.max(220, bbox.width + padX * 2);
+  const vh = Math.max(180, bbox.height + padY * 2);
+
+  return (
+    <svg
+      viewBox={`${vx} ${vy} ${vw} ${vh}`}
+      preserveAspectRatio="xMidYMid meet"
+      className="schematic-svg symbol-editor-svg"
+      role="img"
+      aria-label={`xschem symbol ${model.provenance.assetPath}`}
+    >
+      <defs>
+        <pattern id="xschem-grid" width="20" height="20" patternUnits="userSpaceOnUse">
+          <path d="M 20 0 L 0 0 0 20" fill="none" stroke="#18181f" strokeWidth="0.8" />
+        </pattern>
+      </defs>
+      <rect x={vx} y={vy} width={vw} height={vh} fill="#08080b" />
+      <rect x={vx} y={vy} width={vw} height={vh} fill="url(#xschem-grid)" />
+      <line x1={vx} y1={0} x2={vx + vw} y2={0} className="symbol-origin-axis" strokeWidth="0.8" />
+      <line x1={0} y1={vy} x2={0} y2={vy + vh} className="symbol-origin-axis" strokeWidth="0.8" />
+      <rect
+        x={bbox.x1}
+        y={bbox.y1}
+        width={bbox.width}
+        height={bbox.height}
+        fill="none"
+        stroke="#272732"
+        strokeWidth="0.9"
+        strokeDasharray="3 3"
+      />
+      {rects.map((r, idx) => (
+        <rect
+          key={`rect-${idx}`}
+          x={Math.min(r.x1, r.x2)}
+          y={Math.min(r.y1, r.y2)}
+          width={Math.abs(r.x2 - r.x1)}
+          height={Math.abs(r.y2 - r.y1)}
+          fill="rgba(59, 130, 246, 0.06)"
+          stroke="#60a5fa"
+          strokeWidth="1.8"
+        />
+      ))}
+      {polygons.map((poly, idx) => (
+        <polyline
+          key={`poly-${idx}`}
+          points={poly.points.map((pt) => `${pt.x},${pt.y}`).join(" ")}
+          fill="none"
+          stroke="#34d399"
+          strokeWidth="2"
+          strokeLinejoin="round"
+        />
+      ))}
+      {lines.map((l, idx) => (
+        <line
+          key={`line-${idx}`}
+          x1={l.x1}
+          y1={l.y1}
+          x2={l.x2}
+          y2={l.y2}
+          stroke={l.layer === 4 ? "#38bdf8" : "#a1a1aa"}
+          strokeWidth={l.layer === 4 ? "2.1" : "1.6"}
+          strokeLinecap="round"
+        />
+      ))}
+      {arcs.map((a, idx) => (
+        <circle
+          key={`arc-${idx}`}
+          cx={a.x}
+          cy={a.y}
+          r={a.r}
+          fill="none"
+          stroke="#38bdf8"
+          strokeWidth="1.8"
+        />
+      ))}
+      {pins.map((pin) => {
+        const [x1, y1, x2, y2] = pin.box;
+        const labelOffset = pin.side === "left" ? -8 : pin.side === "right" ? 8 : 0;
+        const labelYOffset = pin.side === "top" ? -8 : pin.side === "bottom" ? 12 : 3;
+        const anchor =
+          pin.side === "left" ? "end" : pin.side === "right" ? "start" : "middle";
+        return (
+          <g key={pin.name}>
+            <rect
+              x={Math.min(x1, x2)}
+              y={Math.min(y1, y2)}
+              width={Math.max(4, Math.abs(x2 - x1))}
+              height={Math.max(4, Math.abs(y2 - y1))}
+              fill="#ef4444"
+              stroke="#fca5a5"
+              strokeWidth="1"
+            />
+            <text
+              x={pin.x + labelOffset}
+              y={pin.y + labelYOffset}
+              textAnchor={anchor}
+              fill="#f4f4f5"
+              fontSize="9"
+              fontFamily="var(--mono)"
+              fontWeight="600"
+            >
+              {pin.name} ({pin.dir})
+            </text>
+          </g>
+        );
+      })}
+      {texts.map((t, idx) => (
+        <text
+          key={`txt-${idx}`}
+          x={t.x}
+          y={t.y}
+          fill="#a1a1aa"
+          fontSize="8.5"
+          fontFamily="var(--mono)"
+        >
+          {t.text}
+        </text>
+      ))}
+    </svg>
+  );
+}
+
 export function SchematicSurface({
   onOpenFile,
   notify,
@@ -434,7 +563,7 @@ export function SchematicSurface({
   onOpenFile: (path: string) => void;
   notify?: (message: string) => void;
 }) {
-  const [mode, setMode] = useState<"viewer" | "symbols">("viewer");
+  const [mode, setMode] = useState<"viewer" | "symbols" | "pdk_sym">("viewer");
   const [sheets, setSheets] = useState<Record<string, SchematicSheet>>(() => schematicSheets);
   const [sheetId, setSheetId] = useState("top");
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -452,6 +581,20 @@ export function SchematicSurface({
   const [newPinName, setNewPinName] = useState("");
   const [newPinSide, setNewPinSide] = useState<SymbolPin["side"]>("left");
   const [newPinType, setNewPinType] = useState<SymbolPin["electricalType"]>("passive");
+
+  // v0.2 Handover §10.2: Verbatim sky130A .sym fixtures & SHA-256 integrity state
+  const symFixtures = getSky130SymFixtures();
+  const [selectedSymPath, setSelectedSymPath] = useState<string>(symFixtures[0].assetPath);
+  const [corruptHashMode, setCorruptHashMode] = useState(false);
+  const activeSymFixture =
+    symFixtures.find((item) => item.assetPath === selectedSymPath) ?? symFixtures[0];
+  const parsedSymResult = parseSymAsset({
+    pdkId: activeSymFixture.pdkId,
+    pdkRevision: activeSymFixture.pdkRevision,
+    assetPath: activeSymFixture.assetPath,
+    expectedSha256: corruptHashMode ? "0".repeat(64) : activeSymFixture.expectedSha256,
+    content: activeSymFixture.content,
+  });
 
   const sheet: SchematicSheet = sheets[sheetId] ?? sheets.top;
   const selected = sheet.instances.find((instance) => instance.id === selectedId);
@@ -624,11 +767,19 @@ export function SchematicSurface({
     <div className="fill-surface schematic-surface">
       <SurfaceHeader
         eyebrow="DESIGN / HIERARCHICAL SCHEMATIC & SYMBOLS"
-        title={mode === "viewer" ? "Schematic workbench" : "KiCad symbol editor"}
+        title={
+          mode === "viewer"
+            ? "Schematic workbench"
+            : mode === "symbols"
+              ? "KiCad symbol editor"
+              : "PDK xschem .sym parser (sky130A · I29)"
+        }
         subtitle={
           mode === "viewer"
             ? "Source-backed hierarchy (top, GPIO RTL, transistor-level Miller op-amp). Drag to pan, scroll to zoom, or double-click a SHEET block."
-            : "Inspect, customize, and extend schematic symbols (MOSFETs, passives, op-amps, photonic blocks) and instantiate them onto any sheet."
+            : mode === "symbols"
+              ? "Inspect, customize, and extend schematic symbols (MOSFETs, passives, op-amps, photonic blocks) and instantiate them onto any sheet."
+              : "Verbatim xschem .sym byte parser with pre-parse SHA-256 verification and explicit layer-5 pin extraction."
         }
         actions={
           <>
@@ -650,6 +801,15 @@ export function SchematicSurface({
               >
                 <Icon name="sliders" size={12} />
                 Symbol editor ({symbols.length})
+              </button>
+              <button
+                role="tab"
+                aria-selected={mode === "pdk_sym"}
+                className={`mode-toggle-btn ${mode === "pdk_sym" ? "active" : ""}`}
+                onClick={() => setMode("pdk_sym")}
+              >
+                <Icon name="verification" size={12} />
+                PDK .sym ({symFixtures.length})
               </button>
             </div>
             <button
@@ -829,126 +989,60 @@ export function SchematicSurface({
               </div>
             </div>
 
-            <aside className="inspector">
-              <div className="inspector-heading">
-                <span className="eyebrow">INSPECTOR</span>
-                <span>{selected ? selected.id : "SHEET"}</span>
-              </div>
-
-              {selected ? (
-                <>
-                  <div className="inspector-title-row">
-                    <h3>{selected.label}</h3>
-                    <span className={`tone-badge ${selected.tone}`}>{selected.badge}</span>
-                  </div>
-                  <code className="inspector-path">{selected.block}</code>
-                  <dl className="inspector-params">
-                    {selected.params.map((param) => (
-                      <div key={param.name}>
-                        <dt>{param.name}</dt>
-                        <dd>{param.value}</dd>
+            {selected && (
+              <aside className="inspector">
+                <div className="inspector-heading">
+                  <span className="eyebrow">PROPERTIES</span>
+                  <button
+                    className="pin-remove-btn"
+                    onClick={() => setSelectedId(null)}
+                    title="Close properties"
+                  >
+                    ×
+                  </button>
+                </div>
+                <div className="inspector-title-row">
+                  <h3>{selected.label}</h3>
+                  <span className={`tone-badge ${selected.tone}`}>{selected.badge}</span>
+                </div>
+                <code className="inspector-path">{selected.block}</code>
+                <dl className="inspector-params">
+                  {selected.params.map((param) => (
+                    <div key={param.name}>
+                      <dt>{param.name}</dt>
+                      <dd>{param.value}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <div className="inspector-section">
+                  <span className="eyebrow">PORTS ({selected.ports.length})</span>
+                  <div className="port-list">
+                    {selected.ports.map((port) => (
+                      <div key={port.name} className="port-row">
+                        <span className="port-dot" />
+                        <b>{port.name}</b>
+                        <small>{port.side}</small>
                       </div>
                     ))}
-                  </dl>
-                  <div className="inspector-section">
-                    <span className="eyebrow">PORTS ({selected.ports.length})</span>
-                    <div className="port-list">
-                      {selected.ports.map((port) => (
-                        <div key={port.name} className="port-row">
-                          <span className="port-dot" />
-                          <b>{port.name}</b>
-                          <small>{port.side}</small>
-                        </div>
-                      ))}
-                    </div>
                   </div>
-                  <div className="inspector-actions">
-                    {selected.sheet && (
-                      <button className="primary-button" onClick={() => openSheet(selected.sheet!)}>
-                        Open {selected.sheet} sub-sheet
-                        <Icon name="chevronRight" size={13} />
-                      </button>
-                    )}
-                    <button
-                      className="secondary-button"
-                      onClick={() => onOpenFile(selected.sourceFile ?? sourcePathForSheet)}
-                    >
-                      <Icon name="code" size={13} />
-                      Open {selected.sourceFile ?? sourcePathForSheet}
+                </div>
+                <div className="inspector-actions">
+                  {selected.sheet && (
+                    <button className="primary-button" onClick={() => openSheet(selected.sheet!)}>
+                      Open {selected.sheet}
+                      <Icon name="chevronRight" size={12} />
                     </button>
-                    <button
-                      className="secondary-button"
-                      onClick={() => {
-                        if (selected.symbol && selected.symbol !== "block") {
-                          const match = symbols.find((s) => s.shape === selected.symbol);
-                          if (match) setSelectedSymbolId(match.id);
-                        }
-                        setMode("symbols");
-                      }}
-                    >
-                      <Icon name="sliders" size={13} />
-                      Inspect in Symbol Editor
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="inspector-title-row">
-                    <h3>{sheet.name}</h3>
-                    <span className="tone-badge blue">SHEET</span>
-                  </div>
-                  <p className="inspector-note">{sheet.note}</p>
-                  <dl className="inspector-params">
-                    <div>
-                      <dt>Path</dt>
-                      <dd>{sheet.path}</dd>
-                    </div>
-                    <div>
-                      <dt>Source</dt>
-                      <dd>{sourcePathForSheet}</dd>
-                    </div>
-                    <div>
-                      <dt>Instances</dt>
-                      <dd>{sheet.instances.length}</dd>
-                    </div>
-                    <div>
-                      <dt>Connections</dt>
-                      <dd>{sheet.wires.length}</dd>
-                    </div>
-                  </dl>
-                  {sheet.id === "gpio" && (
-                    <div className="inline-callout warning">
-                      <Icon name="warning" size={14} />
-                      <span>OpenSTA flags the readback mux on this sheet: −1.12 ns setup.</span>
-                    </div>
                   )}
-                  {sheet.id === "opamp" && (
-                    <div className="inline-callout warning">
-                      <Icon name="sparkles" size={14} />
-                      <span>
-                        Rocket Fuel + ngspice loop: increasing stage-2 L2 from 0.5 µm to 1.0 µm
-                        brings DC gain from 55.73 dB (FAIL) to 61.18 dB (PASS).
-                      </span>
-                    </div>
-                  )}
-                  <div className="inspector-actions">
-                    <button
-                      className="primary-button"
-                      onClick={() => setMode("symbols")}
-                    >
-                      <Icon name="sliders" size={13} />
-                      Open Symbol Editor
-                    </button>
-                    <button
-                      className="secondary-button"
-                      onClick={() => onOpenFile(sourcePathForSheet)}
-                    >
-                      View schematic source
-                    </button>
-                  </div>
-                </>
-              )}
-            </aside>
+                  <button
+                    className="secondary-button"
+                    onClick={() => onOpenFile(selected.sourceFile ?? sourcePathForSheet)}
+                  >
+                    <Icon name="code" size={12} />
+                    Source
+                  </button>
+                </div>
+              </aside>
+            )}
           </div>
 
           <div className="diagram-statusbar">
@@ -963,7 +1057,7 @@ export function SchematicSurface({
             </span>
           </div>
         </div>
-      ) : (
+      ) : mode === "symbols" ? (
         <div className="panel diagram-panel symbol-editor-panel">
           <div className="diagram-toolbar">
             <span className="eyebrow">KICAD-STYLE SYMBOL LIBRARY</span>
@@ -1163,6 +1257,193 @@ export function SchematicSurface({
             <span>{activeSymbol.pins.length} pins configured</span>
             <span className="statusbar-right">
               <span className="status-dot passed" /> Symbol library ready
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="panel diagram-panel symbol-editor-panel">
+          <div className="diagram-toolbar">
+            <span className="eyebrow">XSCHEM .SYM CONTRACT (§10.2 · I29)</span>
+            <span className="diagram-hint">
+              PDK: {activeSymFixture.pdkId} @ {activeSymFixture.pdkRevision.slice(0, 10)}… · SHA-256 verified before parse
+            </span>
+            <div className="zoom-group">
+              <button
+                className={`secondary-button compact-btn ${corruptHashMode ? "danger" : ""}`}
+                onClick={() => setCorruptHashMode((prev) => !prev)}
+              >
+                <Icon name="warning" size={12} />
+                {corruptHashMode ? "Restore valid SHA-256" : "Simulate SHA-256 mismatch"}
+              </button>
+              {parsedSymResult.ok && (
+                <button
+                  className="primary-button compact-btn"
+                  onClick={() => {
+                    const symModel = parsedSymResult.symbol;
+                    const currentSheet = sheets[sheetId] ?? sheets.top;
+                    const count = currentSheet.instances.length + 1;
+                    const cellShort =
+                      activeSymFixture.assetPath.split("/").pop()?.replace(".sym", "") ?? "sym";
+                    const newId = `X${count}`;
+                    const newInstance: SchematicInstance = {
+                      id: newId,
+                      label: cellShort.toUpperCase(),
+                      block: `${activeSymFixture.pdkId}://${activeSymFixture.assetPath}`,
+                      x: 90 + ((count * 70) % 540),
+                      y: 90 + ((count * 50) % 240),
+                      width: 152,
+                      height: 104,
+                      tone: "amber",
+                      badge: "IP",
+                      symbol: cellShort.includes("pfet")
+                        ? "pmos"
+                        : cellShort.includes("nfet")
+                          ? "nmos"
+                          : cellShort.includes("res")
+                            ? "resistor"
+                            : cellShort.includes("cap")
+                              ? "capacitor"
+                              : "opamp",
+                      sourceFile: activeSymFixture.assetPath,
+                      params: [
+                        { name: "PDK", value: activeSymFixture.pdkId },
+                        { name: "SHA256", value: activeSymFixture.expectedSha256.slice(0, 12) },
+                      ],
+                      ports: symModel.pins.map((p, idx) => ({
+                        name: p.name,
+                        side: p.side,
+                        offset: Math.min(0.85, Math.max(0.18, (idx + 1) / (symModel.pins.length + 1))),
+                      })),
+                    };
+                    setSheets((prev) => ({
+                      ...prev,
+                      [sheetId]: {
+                        ...currentSheet,
+                        instances: [...currentSheet.instances, newInstance],
+                      },
+                    }));
+                    setMode("viewer");
+                    setSelectedId(newId);
+                    notify?.(`Instantiated verified PDK symbol ${activeSymFixture.assetPath} as ${newId}.`);
+                  }}
+                >
+                  <Icon name="plus" size={12} />
+                  Instantiate .sym on {sheet.id}
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="diagram-body symbol-editor-body">
+            <aside className="symbol-catalog">
+              <div className="inspector-heading">
+                <span className="eyebrow">SKY130A .SYM ASSETS</span>
+                <span>{symFixtures.length} files</span>
+              </div>
+              <div className="symbol-list" role="listbox" aria-label="Sky130A xschem symbol assets">
+                {symFixtures.map((fixture) => (
+                  <button
+                    key={fixture.assetPath}
+                    role="option"
+                    aria-selected={fixture.assetPath === activeSymFixture.assetPath}
+                    className={`symbol-row ${fixture.assetPath === activeSymFixture.assetPath ? "active" : ""}`}
+                    onClick={() => {
+                      setSelectedSymPath(fixture.assetPath);
+                      setCorruptHashMode(false);
+                    }}
+                  >
+                    <div className="symbol-row-top">
+                      <b>{fixture.assetPath.split("/").pop()}</b>
+                      <DomainTag domain="analog" />
+                    </div>
+                    <small>
+                      {fixture.assetPath} · sha256:{fixture.expectedSha256.slice(0, 8)}…
+                    </small>
+                  </button>
+                ))}
+              </div>
+            </aside>
+
+            <div className="diagram-canvas">
+              {parsedSymResult.ok ? (
+                <>
+                  <XschemSymCanvas model={parsedSymResult.symbol} />
+                  <div className="diagram-overlay">
+                    <span className="overlay-chip">
+                      SHA-256 VERIFIED · {parsedSymResult.provenance.sha256.slice(0, 12)}…
+                    </span>
+                    <span className="overlay-chip muted">
+                      BBOX: {parsedSymResult.symbol.bbox.width} × {parsedSymResult.symbol.bbox.height} ·{" "}
+                      {parsedSymResult.symbol.pins.length} B-5 PINS
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="empty-state">
+                  <Icon name="warning" size={24} />
+                  <b>Integrity Verification Refused ({parsedSymResult.error.code})</b>
+                  <span>{parsedSymResult.error.message}</span>
+                  <code>expected: {parsedSymResult.error.expectedSha256.slice(0, 24)}…</code>
+                  <code>actual:   {parsedSymResult.error.actualSha256.slice(0, 24)}…</code>
+                </div>
+              )}
+            </div>
+
+            <aside className="inspector symbol-inspector">
+              <div className="inspector-heading">
+                <span className="eyebrow">.SYM PROVENANCE &amp; PINS</span>
+                <span>{parsedSymResult.ok ? "VERIFIED" : "REFUSED"}</span>
+              </div>
+              <dl className="inspector-params">
+                <div>
+                  <dt>PDK</dt>
+                  <dd>{activeSymFixture.pdkId}</dd>
+                </div>
+                <div>
+                  <dt>Revision</dt>
+                  <dd>{activeSymFixture.pdkRevision.slice(0, 12)}…</dd>
+                </div>
+                <div>
+                  <dt>Asset path</dt>
+                  <dd>{activeSymFixture.assetPath}</dd>
+                </div>
+                <div>
+                  <dt>SHA-256</dt>
+                  <dd>{activeSymFixture.expectedSha256.slice(0, 16)}…</dd>
+                </div>
+              </dl>
+              {parsedSymResult.ok && (
+                <div className="inspector-section">
+                  <span className="eyebrow">
+                    EXPLICIT LAYER-5 PINS ({parsedSymResult.symbol.pins.length})
+                  </span>
+                  <div className="port-list">
+                    {parsedSymResult.symbol.pins.map((pin) => (
+                      <div key={pin.name} className="port-row">
+                        <span className="port-dot" />
+                        <b>{pin.name}</b>
+                        <small>
+                          {pin.dir} · ({pin.x}, {pin.y}) · {pin.side}
+                        </small>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </aside>
+          </div>
+
+          <div className="diagram-statusbar">
+            <span>Asset: {activeSymFixture.assetPath}</span>
+            <span>PDK: {activeSymFixture.pdkId}</span>
+            <span>
+              {parsedSymResult.ok
+                ? `${parsedSymResult.symbol.pins.length} explicit pins · ${parsedSymResult.symbol.lines.length} lines`
+                : "Refused on SHA-256 mismatch"}
+            </span>
+            <span className="statusbar-right">
+              <span className={`status-dot ${parsedSymResult.ok ? "passed" : "failed"}`} />{" "}
+              {parsedSymResult.ok ? "I29 Verbatim .sym verified" : "Integrity check failed"}
             </span>
           </div>
         </div>

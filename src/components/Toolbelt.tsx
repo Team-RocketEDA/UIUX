@@ -1,5 +1,6 @@
+import { useState } from "react";
 import type { ToolDefinition } from "../types";
-import { Icon } from "./icons";
+import { Icon, ToolIcon } from "./icons";
 
 const categoryOrder: ToolDefinition["category"][] = [
   "Layout",
@@ -12,6 +13,8 @@ const categoryOrder: ToolDefinition["category"][] = [
 export function Toolbelt({
   tools,
   onRunTool,
+  sidebarOpen = true,
+  onToggleSidebar,
   onToggleConsole,
   consoleOpen,
   onToggleAssistant,
@@ -19,26 +22,31 @@ export function Toolbelt({
 }: {
   tools: ToolDefinition[];
   onRunTool: (toolId: string) => void;
+  sidebarOpen?: boolean;
+  onToggleSidebar?: () => void;
   onToggleConsole: () => void;
   consoleOpen: boolean;
   onToggleAssistant: () => void;
   assistantOpen: boolean;
 }) {
-  const unavailable = tools.filter((tool) => !tool.available).length;
+  const [analysisMode, setAnalysisMode] = useState("Transient");
 
   return (
     <div className="toolbelt">
-      <div className="toolbelt-label">
-        <span className="eyebrow">ENGINE TOOLBELT</span>
-        <span className="toolbelt-count">
-          {tools.length} tools
-          {unavailable > 0 ? ` · ${unavailable} unavailable` : ""}
-        </span>
-      </div>
-
+      {onToggleSidebar && (
+        <button
+          className={`toolbar-button ${sidebarOpen ? "active" : ""}`}
+          onClick={onToggleSidebar}
+          title="Toggle sidebar (⌘B)"
+          aria-pressed={sidebarOpen}
+        >
+          <Icon name="folder" size={13} />
+          Files
+        </button>
+      )}
       <div className="toolbelt-scroll" role="toolbar" aria-label="Engine tools">
         {categoryOrder.map((category, groupIndex) => (
-          <div className="toolbelt-group" key={category}>
+          <div className="toolbelt-group" key={category} role="group" aria-label={category}>
             {groupIndex > 0 && <span className="toolbelt-separator" aria-hidden="true" />}
             {tools
               .filter((tool) => tool.category === category)
@@ -53,9 +61,13 @@ export function Toolbelt({
                     title={description}
                     aria-label={description}
                     disabled={!tool.available}
-                    onClick={() => onRunTool(tool.id)}
+                    onClick={() => {
+                      const mode: Record<string, string> = { ngspice: "AC", cace: "AC", magic: "DRC", drc: "DRC", librelane: "PnR", openroad: "PnR", verilator: "Transient" };
+                      if (mode[tool.id]) setAnalysisMode(mode[tool.id]);
+                      onRunTool(tool.id);
+                    }}
                   >
-                    <span className="tool-button-icon">{tool.icon}</span>
+                    <span className="tool-button-icon"><ToolIcon toolId={tool.id} fallback={tool.icon} /></span>
                   </button>
                 );
               })}
@@ -64,6 +76,7 @@ export function Toolbelt({
       </div>
 
       <div className="toolbelt-actions">
+        <span className="analysis-mode" title="Last selected tool analysis mode">{analysisMode}</span>
         <button
           className={`toolbar-button ${consoleOpen ? "active" : ""}`}
           onClick={onToggleConsole}

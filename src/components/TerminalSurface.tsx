@@ -9,13 +9,8 @@ type TerminalLine = {
 };
 
 const initialLines: TerminalLine[] = [
-  { kind: "muted", text: "RocketEDA project shell · python 3.12 · local runner adapter" },
-  { kind: "muted", text: "Project rocket-demo mounted read/write. Type `help` for supported commands." },
-  { kind: "output", text: "" },
-  { kind: "command", text: "python design/photonic/mzi.py" },
-  { kind: "output", text: "Building cspdk mmi_1x2 and mmi_2x1 cells..." },
-  { kind: "output", text: "MZI routed with two 90° bends → exports/mzi.gds" },
-  { kind: "success", text: "job photonic-layout-014 completed in 1.8s" },
+  { kind: "muted", text: "RocketEDA command adapter · simulated runner" },
+  { kind: "muted", text: "Type help for commands. Tool jobs appear in the Console dock." },
 ];
 
 export function TerminalSurface({
@@ -114,7 +109,7 @@ export function TerminalSurface({
       );
       return;
     }
-    if (trimmed.startsWith("python")) {
+    if (/^python(?:\s|$)/.test(trimmed)) {
       const script = trimmed.slice(6).trim();
       if (!script) {
         append({ kind: "error", text: "Provide a script path or inline Python code." });
@@ -139,7 +134,7 @@ export function TerminalSurface({
     setCommand("");
   };
 
-  const quickCommands = ["help", "checks", "run verilator", "run opensta", "python mzi.py"];
+  const quickCommands = ["help", "checks", "run verilator", "run opensta", "python design/photonic/mzi.py"];
 
   return (
     <div className="fill-surface terminal-surface">
@@ -157,11 +152,6 @@ export function TerminalSurface({
 
       <section className="panel terminal-panel">
         <div className="terminal-titlebar">
-          <span className="terminal-dots" aria-hidden="true">
-            <i />
-            <i />
-            <i />
-          </span>
           <span className="terminal-tab active">
             <Icon name="code" size={12} />
             project shell
@@ -175,7 +165,7 @@ export function TerminalSurface({
         <div className="terminal-output" ref={outputRef} aria-live="polite">
           {lines.map((line, index) => (
             <div className={`terminal-line ${line.kind}`} key={index}>
-              {line.kind === "command" && <span className="terminal-prompt">rocket-demo $</span>}
+              {line.kind === "command" && <span className="terminal-prompt">rocket-demo:~ $</span>}
               <span>{line.text}</span>
             </div>
           ))}
@@ -186,7 +176,7 @@ export function TerminalSurface({
               submit();
             }}
           >
-            <span className="terminal-prompt">rocket-demo $</span>
+            <span className="terminal-prompt">rocket-demo:~ $</span>
             <input
               value={command}
               onChange={(event) => setCommand(event.target.value)}

@@ -29,19 +29,7 @@ const seedMessages: Message[] = [
   {
     id: "seed-1",
     role: "agent",
-    text: "I assembled the RISC-V core, GPIO sheet, SRAM macro, SKY130 op-amp and CSPDK MZI from project IP. Verilator, LibreLane, ngspice and SAX passed. OpenSTA reports a setup violation: −1.12 ns at 125 MHz.",
-    time: "10:42 AM",
-  },
-  {
-    id: "seed-2",
-    role: "user",
-    text: "Fix it and keep the clock target at 125 MHz.",
-    time: "10:43 AM",
-  },
-  {
-    id: "seed-3",
-    role: "agent",
-    text: "The violation is the combinational readback path in design/digital/gpio.sv. I prepared a one-level registered readback change. Approving it lets me edit the source and rerun Verilator, then OpenSTA.",
+    text: "OpenSTA flagged −1.12 ns setup slack on design/digital/gpio.sv (125 MHz). Prepared a registered readback patch below.",
     time: "10:44 AM",
   },
 ];
@@ -657,21 +645,20 @@ export function AssistantPanel({
                     Approve & rerun
                   </button>
                 </div>
-                <small className="approval-note">
-                  Edits are written to the project working tree and recorded in iteration history.
-                </small>
               </div>
             )}
           </div>
 
           <div className="assistant-composer">
-            <div className="quick-prompts">
-              {quickPrompts.map((prompt) => (
-                <button key={prompt} onClick={() => send(prompt)} disabled={shownBusy}>
-                  {prompt}
-                </button>
-              ))}
-            </div>
+            {!pendingApproval && (
+              <div className="quick-prompts">
+                {quickPrompts.map((prompt) => (
+                  <button key={prompt} onClick={() => send(prompt)} disabled={shownBusy}>
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="composer-box">
               <textarea
                 value={input}
@@ -708,7 +695,6 @@ export function AssistantPanel({
                 )}
               </div>
             </div>
-            <small className="composer-note">⌘ / Ctrl + Enter to send · source edits require approval</small>
           </div>
         </>
       )}

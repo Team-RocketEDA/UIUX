@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Job } from "../types";
 import { Icon } from "./icons";
 import { ProgressBar } from "./ui";
@@ -20,6 +20,8 @@ export function RunConsole({
   onClear: () => void;
   onToggle: () => void;
 }) {
+  const [tab, setTab] = useState<"console" | "problems" | "output">("console");
+  const problems = jobs.filter((job) => job.status === "failed");
   const selectedJob = jobs.find((job) => job.id === activeJobId) ?? jobs[0];
   const runningCount = jobs.filter((job) => job.status === "running").length;
   const logRef = useRef<HTMLDivElement>(null);
@@ -30,17 +32,18 @@ export function RunConsole({
   }, [selectedJob?.id, selectedJob?.logs.length]);
 
   return (
-    <section className={`run-console ${open ? "open" : "collapsed"}`} style={{ height: open ? height : 38 }}>
+    <section className={`run-console ${open ? "open" : "collapsed"}`} style={{ height: open ? height : 30 }}>
       <div className="console-header">
-        <button className="console-toggle" onClick={onToggle} aria-expanded={open}>
+        <button className="console-toggle" onClick={onToggle} aria-expanded={open} aria-label="Toggle run console" title="Toggle run console">
           <Icon
             name="chevronDown"
             size={13}
             className={open ? "chevron-open" : "chevron-closed"}
           />
           <Icon name="terminal" size={13} />
-          Run console
+          Console
         </button>
+        <div className="console-tabs" role="tablist" aria-label="Console views">{(["console", "problems", "output"] as const).map((item) => <button key={item} role="tab" aria-selected={tab === item} className={tab === item ? "active" : ""} onClick={() => { setTab(item); if (!open) onToggle(); }}>{item === "console" ? "Console" : item === "problems" ? `Problems (${problems.length})` : "Output"}</button>)}</div>
         {runningCount > 0 && (
           <span className="console-running">
             <span className="status-dot active" />
@@ -61,8 +64,10 @@ export function RunConsole({
       </div>
 
       {open && (
-        <div className="console-body">
-          <div className="job-list" role="list" aria-label="Runner jobs">
+        <div className={`console-body console-view-${tab}`}>
+          {tab === "problems" ? <div className="console-problems">{problems.length ? problems.map((job) => <button className="problem-row" key={job.id} onClick={() => { onSelectJob(job.id); setTab("output"); }}><Icon name="warning" size={13} /><b>{job.tool}</b><span>{job.title}</span><small>{job.logs.filter((line) => /fail|error|violat/i.test(line)).join(" · ") || "Job failed; inspect output."}</small></button>) : <div className="console-empty">No failed jobs in this console.</div>}</div> : <>
+
+          <div className="job-list" hidden={tab === "output"} role="list" aria-label="Runner jobs">
             {jobs.length === 0 ? (
               <div className="console-empty">
                 <Icon name="play" size={16} />
@@ -138,6 +143,7 @@ export function RunConsole({
               </div>
             )}
           </div>
+          </>}
         </div>
       )}
     </section>

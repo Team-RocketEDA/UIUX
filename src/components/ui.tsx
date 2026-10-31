@@ -7,9 +7,9 @@ const pillLabels: Record<PillStatus, string> = {
   passed: "PASS",
   failed: "FAIL",
   running: "RUNNING",
-  not_run: "NOT RUN",
+  not_run: "NOT_RUN",
   unsupported: "UNSUPPORTED",
-  skipped: "NOT RUN",
+  skipped: "NOT_RUN",
   ready: "READY",
   unavailable: "UNAVAILABLE",
   active: "ACTIVE",
@@ -44,7 +44,7 @@ export function SurfaceHeader({
       <div className="surface-heading">
         <span className="eyebrow">{eyebrow}</span>
         <h1>{title}</h1>
-        {subtitle && <p>{subtitle}</p>}
+        {subtitle && <p title={subtitle}>{subtitle}</p>}
       </div>
       {actions && <div className="surface-actions">{actions}</div>}
     </header>

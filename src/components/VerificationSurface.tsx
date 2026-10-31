@@ -3,7 +3,7 @@ import type { Check, ConstraintSet } from "../types";
 import { Icon } from "./icons";
 import { DomainTag, ProgressBar, StatusPill, SurfaceHeader } from "./ui";
 
-type Filter = "all" | "passed" | "failed" | "unsupported";
+type Filter = "all" | "passed" | "failed" | "not_run" | "unsupported";
 
 const statusCopy: Record<Check["status"], string> = {
   passed: "Actual tool output met the acceptance criterion for this revision.",
@@ -36,11 +36,11 @@ export function VerificationSurface({
   const failed = checks.filter((check) => check.status === "failed").length;
   const unsupported = checks.filter((check) => check.status === "unsupported").length;
   const running = checks.some((check) => check.status === "running");
-  const timingPassed = checks.find((check) => check.id === "static-timing")?.status === "passed";
+  const notRun = checks.filter((check) => check.status === "not_run" || check.status === "skipped").length;
 
   const filteredChecks = checks.filter((check) => {
     if (filter === "all") return true;
-    return check.status === filter;
+    return check.status === filter || (filter === "not_run" && check.status === "skipped");
   });
 
   const toggleExpanded = (id: string) => {
@@ -51,29 +51,6 @@ export function VerificationSurface({
       return next;
     });
   };
-
-  const trace = [
-    {
-      iteration,
-      status: timingPassed ? "passed" : "failed",
-      title: timingPassed ? "Timing closed after a targeted repair" : "Setup violation diagnosed on GPIO readback",
-      detail: timingPassed
-        ? "Readback mux shortened in design/digital/gpio.sv. Verilator 128/128 passed; OpenSTA measured +0.32 ns slack."
-        : "OpenSTA: u_gpio.readback[7] → u_core.irq, −1.12 ns at 125 MHz. Proposed source edit awaits approval.",
-    },
-    {
-      iteration: Math.max(1, iteration - 1),
-      status: "passed",
-      title: "RTL simulation and RTL-to-GDS completed",
-      detail: "Verilator 128/128 and LibreLane routing passed; final GDS and evidence recorded for revision 8f3c1a2.",
-    },
-    {
-      iteration: Math.max(1, iteration - 2),
-      status: "passed",
-      title: "Agent assembled the mixed-domain project",
-      detail: "Reused rv32i_core, gpio_controller and sky130_sram_2k; generated the MZI from PDK primitives.",
-    },
-  ];
 
   const limitReached = iteration >= constraints.maxIterations;
 
@@ -99,12 +76,12 @@ export function VerificationSurface({
 
       <div className="verification-summary">
         <div className="verify-stat">
-          <span className="eyebrow">PASSED</span>
+          <span className="eyebrow">PASS</span>
           <b className="pass">{passed}</b>
           <small>actual runs met targets</small>
         </div>
         <div className="verify-stat">
-          <span className="eyebrow">FAILED</span>
+          <span className="eyebrow">FAIL</span>
           <b className="fail">{failed}</b>
           <small>evidence retained</small>
         </div>
@@ -113,6 +90,7 @@ export function VerificationSurface({
           <b className="skip">{unsupported}</b>
           <small>not counted as passes</small>
         </div>
+        <div className="verify-stat"><span className="eyebrow">NOT_RUN</span><b>{notRun}</b><small>no completed evidence</small></div>
         <div className="verify-progress">
           <div className="summary-progress-label">
             <span>Required gate progress</span>
@@ -120,7 +98,7 @@ export function VerificationSurface({
               {passed}/{checks.length}
             </b>
           </div>
-          <ProgressBar value={(passed / checks.length) * 100} />
+          <ProgressBar value={checks.length ? (passed / checks.length) * 100 : 0} />
           <small>
             {constraints.requiredChecks.length} gates configured · max {constraints.maxIterations}{" "}
             repair iterations
@@ -132,9 +110,10 @@ export function VerificationSurface({
         {(
           [
             ["all", "All", checks.length],
-            ["passed", "Passed", passed],
-            ["failed", "Failed", failed],
-            ["unsupported", "Unsupported", unsupported],
+            ["passed", "PASS", passed],
+            ["failed", "FAIL", failed],
+            ["not_run", "NOT_RUN", notRun],
+            ["unsupported", "UNSUPPORTED", unsupported],
           ] as [Filter, string, number][]
         ).map(([id, label, count]) => (
           <button
@@ -174,7 +153,7 @@ export function VerificationSurface({
                 >
                   <StatusPill status={check.status} />
                   <span className="check-title">
-                    <b>{check.name}</b>
+                    <b title={check.name}>{check.id}</b>
                     <small>
                       {check.tool} · updated {check.updated}
                       {!required && " · not required"}
@@ -233,7 +212,7 @@ export function VerificationSurface({
                       </div>
                       <div className="check-artifact">
                         <span className="eyebrow">ARTIFACT</span>
-                        {check.artifact === "—" ? (
+                        {!check.artifact || check.artifact === "—" ? (
                           <span className="artifact-missing">No artifact — no run</span>
                         ) : (
                           <button
@@ -255,72 +234,11 @@ export function VerificationSurface({
         )}
       </section>
 
-      <div className="verification-bottom">
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">REPAIR TRACE</span>
-              <h2>Iteration history</h2>
-            </div>
-            <span className={`iteration-chip ${limitReached ? "limit" : ""}`}>
-              <Icon name="history" size={12} />
-              {iteration} / {constraints.maxIterations} iterations
-            </span>
-          </div>
-          <div className="trace-list">
-            {trace.map((entry, index) => (
-              <div className="trace-row" key={`${entry.iteration}-${index}`}>
-                <span className={`trace-node ${entry.status}`}>
-                  {entry.status === "failed" ? <Icon name="warning" size={12} /> : <Icon name="check" size={12} />}
-                </span>
-                <div>
-                  <span className="trace-meta">
-                    Iteration {entry.iteration} · {entry.status === "passed" ? "passed" : "action required"}
-                  </span>
-                  <b>{entry.title}</b>
-                  <p>{entry.detail}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="panel">
-          <div className="panel-heading">
-            <div>
-              <span className="eyebrow">STOP RULE</span>
-              <h2>Human consultation</h2>
-            </div>
-          </div>
-          <div className="stop-rule-body">
-            <div className={`limit-card ${limitReached ? "limit" : ""}`}>
-              <Icon name={limitReached ? "warning" : "clock"} size={17} />
-              <div>
-                <b>
-                  {limitReached
-                    ? "Iteration limit reached"
-                    : `${constraints.maxIterations - iteration} repair iterations remain`}
-                </b>
-                <p>
-                  {limitReached
-                    ? "The agent must stop and ask you how to proceed. It cannot claim success at the limit."
-                    : "At the configured maximum, the agent stops, presents the failures and asks for direction."}
-                </p>
-              </div>
-            </div>
-            <div className="unsupported-note">
-              <Icon name="lock" size={14} />
-              <p>
-                DRC/LVS and power remain unsupported in this runner. No final export should be
-                represented as foundry signoff.
-              </p>
-            </div>
-            <button className="secondary-button" onClick={onExportReport}>
-              <Icon name="download" size={13} />
-              Download verification.md
-            </button>
-          </div>
-        </section>
+      <div className="verification-footer">
+        <span><Icon name="history" size={12} />Iteration {iteration}/{constraints.maxIterations}</span>
+        <span>{constraints.requiredChecks.length} required gates</span>
+        <span className={limitReached ? "failed" : "muted"}>{limitReached ? "Repair limit reached · awaiting direction" : `${Math.max(0, constraints.maxIterations - iteration)} iterations remaining`}</span>
+        <span>Evidence revisions: {[...new Set(checks.map((check) => check.revision))].join(", ") || "—"}</span>
       </div>
     </div>
   );
