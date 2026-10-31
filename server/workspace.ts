@@ -330,6 +330,14 @@ export function createWorkspace(options: WorkspaceOptions) {
         if ((await git(open.dir, "status", "--porcelain", "--", rel)) !== "") await git(open.dir, "commit", "-q", "-m", `Edit ${rel}`, "--", rel);
         return json(res, 200, await summary(open));
       }
+      case "GET /api/project/history": {
+        // Commits are the project's record of edits: IDE saves, the agent's changes, project creation.
+        const log = await git(project().dir, "log", "-n", "30", "--format=%h%x09%an%x09%aI%x09%s").catch(() => "");
+        return json(res, 200, log.split("\n").filter(Boolean).map((line) => {
+          const [hash, author, date, ...subject] = line.split("\t");
+          return { hash, author, date, subject: subject.join("\t") };
+        }));
+      }
       case "GET /api/project/checks":
         return json(res, 200, readEvidence(project().dir));
       case "POST /api/project/checks/run":

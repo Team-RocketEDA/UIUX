@@ -109,6 +109,18 @@ export function App() {
     viewRef.current?.scrollTo({ top: 0 });
   }, [view]);
 
+  // Back/forward or an edited #page in the address bar switches page too.
+  useEffect(() => {
+    const onHash = () => {
+      const id = (Object.keys(surfaceMeta) as SurfaceId[]).find((page) => `#${page}` === window.location.hash);
+      if (!id) return;
+      setSurface(id);
+      setView({ kind: "surface", id });
+    };
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
   useEffect(() => {
     if (!project || tools) return;
     api.engineJobs().then((kinds) => setTools(engineTools(kinds))).catch(() => setTools([]));
@@ -217,6 +229,18 @@ export function App() {
         next.delete(path);
         return next;
       });
+      notify(`${path} saved and committed.`);
+      void refresh();
+    } catch (err) {
+      notify(err instanceof Error ? err.message : String(err));
+    }
+  };
+
+  // Save text that didn't come from an open editor tab (e.g. the constraints form).
+  const saveContent = async (path: string, content: string) => {
+    try {
+      setProject(await api.saveFile(path, content));
+      if (path in contents && !dirtyFiles.has(path)) setContents((previous) => ({ ...previous, [path]: content }));
       notify(`${path} saved and committed.`);
       void refresh();
     } catch (err) {
@@ -378,7 +402,11 @@ export function App() {
             onNavigate={navigate}
             onRunChecks={() => void runChecks()}
             onOpenAssistant={openAssistant}
-            tools={status?.tools ?? {}}
+            onAsk={(text) => {
+              setAssistantOpen(true);
+              setDraft({ text, id: Date.now() });
+            }}
+            engineTools={tools}
           />
         );
       case "schematic":
@@ -403,10 +431,18 @@ export function App() {
           />
         );
       case "constraints":
-        return <ConstraintsView project={project} onOpenFile={(path) => void openFile(path)} />;
+        return (
+          <ConstraintsView
+            project={project}
+            readFile={async (path) => (await api.readFile(path)).content}
+            onSave={saveContent}
+            onOpenFile={(path) => void openFile(path)}
+          />
+        );
       case "verification":
         return (
-          <ChecksView project={project} evidence={evidence} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport} />
+          <ChecksView project={project} evidence={evidence} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport}
+            onOpenFile={(path) => void openFile(path)} />
         );
       case "export":
         return <ExportView project={project} evidence={evidence} onExportReport={exportReport} />;

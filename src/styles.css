@@ -2707,3 +2707,242 @@ button.activity-row:hover {
   align-items: center;
   gap: 6px;
 }
+
+/* ---------- constraints form ---------- */
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+  gap: 0 18px;
+}
+
+.form-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px;
+}
+
+.form-panel > .eyebrow {
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.form-panel .field input[type="number"] {
+  width: 120px;
+}
+
+.check-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.toggle-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-soft);
+  cursor: pointer;
+}
+
+.toggle-chip input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.toggle-chip.on {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+.target-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.target-edit select,
+.target-edit input {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px var(--mono);
+}
+
+.target-edit input {
+  width: 80px;
+}
+
+.rw-table input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
+/* ---------- verification ---------- */
+
+.gate-bar {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 2px;
+  background: var(--border);
+}
+
+.gate-bar span {
+  display: block;
+  height: 100%;
+  background: var(--green);
+}
+
+.table-scroll {
+  overflow-x: auto;
+}
+
+.history-table th small {
+  display: block;
+  color: var(--muted);
+  font-weight: 400;
+}
+
+.cell-pass {
+  color: var(--green);
+}
+
+.cell-fail {
+  color: var(--red);
+}
+
+.run-row {
+  cursor: pointer;
+}
+
+.run-row:hover td,
+.run-row.open td {
+  background: var(--hover);
+}
+
+.run-detail td {
+  padding: 0 12px 12px;
+  background: var(--hover);
+}
+
+.run-detail-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0 8px;
+}
+
+.run-detail-head .text-button {
+  margin-left: auto;
+}
+
+.tool-output {
+  max-height: 280px;
+  margin: 0;
+  overflow: auto;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-soft);
+  font: 11.5px/1.5 var(--mono);
+  white-space: pre-wrap;
+}
+
+/* ---------- overview ---------- */
+
+.overview-columns {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 0 18px;
+}
+
+.action-list {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+}
+
+.action-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  text-align: left;
+}
+
+.action-row:hover {
+  background: var(--hover);
+}
+
+.action-row > span:nth-child(2) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.action-row small {
+  color: var(--muted);
+}
+
+.action-icon {
+  display: grid;
+  flex: 0 0 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--tile);
+  color: var(--accent);
+}
+
+.activity-feed {
+  margin: 0;
+  padding: 8px 16px 12px;
+  list-style: none;
+}
+
+.activity-feed li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.activity-feed li:last-child {
+  border-bottom: 0;
+}
+
+.activity-feed .dot {
+  flex: 0 0 7px;
+  background: var(--border-strong);
+}
+
+.dot.red {
+  background: var(--red);
+}
+
+.feed-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-soft);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-feed time {
+  color: var(--muted);
+  font-size: 11.5px;
+  white-space: nowrap;
+}

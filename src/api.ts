@@ -50,6 +50,8 @@ export type ProjectSummary = {
   agent: { state: "starting" | "ready" | "error" | "stopped"; error?: string };
 };
 
+export type Commit = { hash: string; author: string; date: string; subject: string };
+
 export type FileEntry = { path: string; size: number; modified: number; readOnly: boolean };
 
 export type Measurement = { name: string; value: number; unit: string; target: { min?: number; max?: number }; margin: number; status: "pass" | "fail" };
@@ -93,6 +95,7 @@ export const api = {
   files: () => request<FileEntry[]>("GET", "/api/project/files"),
   readFile: (path: string) => request<{ path: string; content: string; readOnly: boolean }>("GET", `/api/project/file?path=${encodeURIComponent(path)}`),
   saveFile: (path: string, content: string) => request<ProjectSummary>("PUT", "/api/project/file", { path, content }),
+  history: () => request<Commit[]>("GET", "/api/project/history"),
   evidence: () => request<Evidence[]>("GET", "/api/project/checks"),
   runChecks: () => request<{ run_id: string; state: string; verdict: Verdict }>("POST", "/api/project/checks/run"),
   exportUrl: "/api/project/export",
