@@ -35,6 +35,13 @@ function stepDetail(step: ToolStep): string {
   return target;
 }
 
+// "at 14:05", or "tomorrow at 00:43" when the provider backs off past midnight.
+function retryTime(next: number) {
+  const at = new Date(next);
+  const clock = at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  return at.toDateString() === new Date().toDateString() ? `at ${clock}` : `on ${at.toLocaleDateString([], { weekday: "long" })} at ${clock}`;
+}
+
 function diffLines(diff: string) {
   return diff
     .split("\n")
@@ -156,6 +163,13 @@ export function AssistantPanel({
           </div>
         )}
         {error && <div className="notice error">{error}</div>}
+        {view.retry && !replay && (
+          <div className="notice warn">
+            The model isn't answering: {view.retry.message}.{" "}
+            {view.retry.next ? `Next try ${retryTime(view.retry.next)}. ` : ""}
+            Stop, or switch the model in rocket_fuel/.env and reopen the project.
+          </div>
+        )}
         {!replay && agentState === "error" && <div className="notice error">The assistant failed to start for this project.</div>}
 
         {timeline.length === 0 && !replay ? (
