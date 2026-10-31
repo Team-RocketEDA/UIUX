@@ -101,3 +101,45 @@ test("reads an ngspice ASCII rawfile and derives the Bode view", () => {
   assert.ok(Math.abs(180 + ugbw.phase - 67.76) < 2, `pm ${180 + ugbw.phase}`);
   assert.equal(nearest(points, 1)!.f, points[0].f);
 });
+
+// ---- approvals: what a netlist diff does to the circuit ----
+import { applyUnifiedDiff, describeChanges } from "../src/schematic/changes.ts";
+
+const L2_DIFF = `Index: design/opamp.cir
+===================================================================
+--- design/opamp.cir
++++ design/opamp.cir
+@@ -1,5 +1,5 @@
+ * Two-stage Miller op-amp, generic 1.8 V level-1 models (demo only, not a foundry PDK)
+ * L2 = second-stage channel length (um); CC = Miller compensation (pF)
+-.param L2=0.5
++.param L2=1.0
+ .param CC=1.0
+ .model nch nmos level=1 vto=0.45 kp=250u lambda=0.2
+`;
+
+test("a parameter edit is shown as the device sizes it moves", () => {
+  const after = applyUnifiedDiff(OPAMP, L2_DIFF)!;
+  assert.ok(after.includes(".param L2=1.0") && !after.includes(".param L2=0.5"));
+  const changes = describeChanges(OPAMP, after);
+  assert.deepEqual(changes[0], { kind: "param", name: "L2", before: "0.5", after: "1" });
+  const m6 = changes.find((c) => c.kind === "device" && c.device === "M6");
+  assert.deepEqual(m6, {
+    kind: "device", circuit: "opamp", device: "M6",
+    fields: [{ name: "W", before: "20µm", after: "40µm" }, { name: "L", before: "0.5µm", after: "1µm" }],
+  });
+  assert.deepEqual(changes.filter((c) => c.kind === "device").map((c) => c.kind === "device" && c.device), ["M6", "M7"]);
+});
+
+test("a diff that no longer matches the file is not guessed at", () => {
+  const moved = OPAMP.replace(".param L2=0.5", ".param L2=0.7");
+  assert.equal(applyUnifiedDiff(moved, L2_DIFF), undefined);
+});
+
+test("rewiring and new parts are reported", () => {
+  const after = OPAMP.replace("CC n2 out {CC*1e-12}", "CC n2 out {CC*1e-12}\nRZ n2 nz 2k").replace("M7 out bias", "M7 out n1");
+  const changes = describeChanges(OPAMP, after);
+  assert.ok(changes.some((c) => c.kind === "added" && c.device === "RZ"));
+  const m7 = changes.find((c) => c.kind === "device" && c.device === "M7");
+  assert.deepEqual(m7?.kind === "device" && m7.fields, [{ name: "pin g", before: "bias", after: "n1" }]);
+});

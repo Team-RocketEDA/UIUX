@@ -15,6 +15,7 @@ import { SourceSurface } from "./components/SourceSurface";
 import { ResizeHandle } from "./components/ui";
 import { PlotsView } from "./components/PlotsView";
 import { SchematicView } from "./components/SchematicView";
+import type { Proposal } from "./schematic/changes";
 import { ChecksView, ConstraintsView, EmptyView, ExportView, OverviewView, verificationReport } from "./components/WorkspaceViews";
 
 const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
@@ -69,6 +70,8 @@ export function App() {
   const [consoleOpen, setConsoleOpen] = useState(false);
   const [consoleHeight, setConsoleHeight] = useState(196);
   const [running, setRunning] = useState(false);
+  // What the assistant's pending netlist change would do; the schematic highlights it.
+  const [proposal, setProposal] = useState<Proposal>();
 
   const [toast, setToast] = useState<string | null>(null);
   const viewRef = useRef<HTMLDivElement>(null);
@@ -337,6 +340,7 @@ export function App() {
             readFile={async (path) => (await api.readFile(path)).content}
             onOpenFile={(path) => void openFile(path)}
             onAsk={openAssistant}
+            proposal={proposal}
           />
         );
       case "plots":
@@ -481,6 +485,8 @@ export function App() {
             agentState={project.agent.state}
             onOpenFile={(path) => void openFile(path)}
             onNavigate={navigate}
+            readFile={async (path) => (await api.readFile(path)).content}
+            onProposal={setProposal}
           />
         </>
       )}

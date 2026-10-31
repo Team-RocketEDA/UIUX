@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Constraints } from "../api";
-import type { ToolStep } from "../agent/fuel";
+import type { Approval, ToolStep } from "../agent/fuel";
+import { applyUnifiedDiff, describeChanges, type CircuitChange, type Proposal } from "../schematic/changes";
 import { useAgent } from "../agent/useAgent";
 import type { SurfaceId } from "../types";
 import { Icon, type IconName } from "./icons";
@@ -42,6 +43,63 @@ function retryTime(next: number) {
   return at.toDateString() === new Date().toDateString() ? `at ${clock}` : `on ${at.toLocaleDateString([], { weekday: "long" })} at ${clock}`;
 }
 
+// What an approval's netlist diff does to the circuit, read against the file as it is now.
+function CircuitEffect({
+  approval,
+  readFile,
+  onProposal,
+}: {
+  approval: Approval;
+  readFile: (path: string) => Promise<string>;
+  onProposal: (proposal?: Proposal) => void;
+}) {
+  const [changes, setChanges] = useState<CircuitChange[]>();
+  const file = approval.files.map(shortPath).find((path) => /\.(cir|sp|spice|net|ckt)$/i.test(path));
+  useEffect(() => {
+    if (!file || !approval.diff) return;
+    let cancelled = false;
+    readFile(file)
+      .then((text) => {
+        const after = applyUnifiedDiff(text, approval.diff!);
+        if (cancelled) return;
+        const described = after === undefined ? undefined : describeChanges(text, after);
+        setChanges(described);
+        if (described?.length) onProposal({ file, changes: described });
+      })
+      .catch(() => undefined);
+    // Answered or gone: the schematic stops showing it.
+    return () => {
+      cancelled = true;
+      onProposal(undefined);
+    };
+  }, [file, approval.diff]);
+  if (!changes?.length) return null;
+  return (
+    <div className="circuit-effect">
+      <span className="eyebrow">Effect on the circuit</span>
+      <ul>
+        {changes.slice(0, 8).map((change, index) => (
+          <li key={index}>
+            {change.kind === "param" ? (
+              <><b className="mono">{change.name}</b> {change.before} → <b>{change.after}</b></>
+            ) : change.kind === "device" ? (
+              <>
+                <b className="mono">{change.device}</b>{" "}
+                {change.fields.map((field, i) => (
+                  <span key={field.name}>{i ? " · " : ""}{field.name} {field.before} → <b>{field.after}</b></span>
+                ))}
+              </>
+            ) : (
+              <><b className="mono">{change.device}</b> {change.kind === "added" ? "added" : "removed"}</>
+            )}
+          </li>
+        ))}
+        {changes.length > 8 && <li className="muted">and {changes.length - 8} more</li>}
+      </ul>
+    </div>
+  );
+}
+
 function diffLines(diff: string) {
   return diff
     .split("\n")
@@ -79,6 +137,8 @@ export function AssistantPanel({
   agentState,
   onOpenFile,
   onNavigate,
+  readFile,
+  onProposal,
 }: {
   width: number;
   onClose: () => void;
@@ -86,6 +146,8 @@ export function AssistantPanel({
   agentState: string;
   onOpenFile: (path: string) => void;
   onNavigate: (surface: SurfaceId) => void;
+  readFile: (path: string) => Promise<string>;
+  onProposal: (proposal?: Proposal) => void;
 }) {
   const agent = useAgent();
   const { view } = agent;
@@ -242,6 +304,7 @@ export function AssistantPanel({
             ))}
             {approval.hypothesis && <p className="approval-why">{approval.hypothesis}</p>}
             {approval.note && <p className="approval-why">{approval.note}</p>}
+            {approval.diff && <CircuitEffect approval={approval} readFile={readFile} onProposal={onProposal} />}
             {approval.diff && <pre className="diff">{diffLines(approval.diff)}</pre>}
             <div className="approval-actions">
               <button className="btn" onClick={() => void agent.reject(approval.id)} disabled={replay}>

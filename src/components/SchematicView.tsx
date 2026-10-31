@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, ReactNode, WheelEvent as ReactWheelEvent } from "react";
+import type { Proposal } from "../schematic/changes";
 import { layoutCircuit, type Placed, type RailSymbol } from "../schematic/layout";
 import { evaluate, formatEng, parseNetlist, showValue, spiceNumber, type Circuit, type Device, type Netlist } from "../schematic/netlist";
 import { Icon } from "./icons";
@@ -139,12 +140,14 @@ export function SchematicView({
   readFile,
   onOpenFile,
   onAsk,
+  proposal,
 }: {
   paths: string[];
   revision: string; // changes whenever a project file does, so edits redraw the schematic
   readFile: (path: string) => Promise<string>;
   onOpenFile: (path: string) => void;
   onAsk: () => void;
+  proposal?: Proposal;
 }) {
   const netlists = useMemo(
     () => paths.filter((path) => NETLIST.test(path) && /^(design|tests|ip)\//.test(path)).sort((a, b) => Number(b.startsWith("design/")) - Number(a.startsWith("design/")) || a.localeCompare(b)),
@@ -195,6 +198,18 @@ export function SchematicView({
   const device = layout?.devices.find((placed) => placed.device.name === selected);
   const selectedNets = new Set(device?.pins.filter((pin) => !pin.hidden).map((pin) => pin.net));
   const isHot = (net: string) => net === hot || selectedNets.has(net);
+  // Parts the assistant's pending change would touch, with their sizes after it.
+  const pending = proposal && proposal.file === active ? proposal.changes : [];
+  const proposed = new Map(
+    pending.flatMap((change) => (change.kind === "device" && change.circuit === circuit?.name ? [[change.device, change.fields] as const] : [])),
+  );
+  const proposedText = (name: string) => {
+    const fields = proposed.get(name);
+    const w = fields?.find((f) => f.name === "W")?.after;
+    const l = fields?.find((f) => f.name === "L")?.after;
+    const value = fields?.find((f) => f.name === "value")?.after;
+    return w || l ? `→ ${(w ?? "").replace(/m$/, "") || "·"} / ${(l ?? "").replace(/m$/, "") || "·"}` : value ? `→ ${value}` : fields ? "→ changed" : "";
+  };
 
   const zoom = (factor: number, cx?: number, cy?: number) => {
     if (!view) return;
@@ -272,6 +287,15 @@ export function SchematicView({
     body = (
       <div className="schematic-body">
         <div className="schematic-canvas">
+          {proposed.size > 0 && (
+            <div className="schematic-proposal">
+              <Icon name="warning" size={13} />
+              Pending change from the assistant:{" "}
+              {pending.filter((c) => c.kind === "param").map((c) => c.kind === "param" && `${c.name} ${c.before} → ${c.after}`).join(", ") ||
+                `${proposed.size} part${proposed.size > 1 ? "s" : ""}`}
+              . Approve or reject it in the assistant panel.
+            </div>
+          )}
           <div className="schematic-tools">
             <button className="ghost-icon" onClick={() => zoom(1 / 1.25)} aria-label="Zoom in"><Icon name="zoomIn" size={15} /></button>
             <button className="ghost-icon" onClick={() => zoom(1.25)} aria-label="Zoom out"><Icon name="zoomOut" size={15} /></button>
@@ -308,7 +332,7 @@ export function SchematicView({
             {layout.devices.map((placed) => (
               <g
                 key={placed.device.name}
-                className={`device ${placed.device.name === selected ? "selected" : ""}`}
+                className={`device ${placed.device.name === selected ? "selected" : ""} ${proposed.has(placed.device.name) ? "proposed" : ""}`}
                 transform={`translate(${placed.x} ${placed.y})`}
                 onClick={() => setSelected(placed.device.name)}
               >
@@ -320,6 +344,9 @@ export function SchematicView({
                 </text>
                 {placed.device.kind !== "subckt" && placed.device.kind !== "other" && (
                   <text x={20} y={8} className="device-size">{sizeText(placed.device, netlist.params)}</text>
+                )}
+                {proposed.has(placed.device.name) && (
+                  <text x={20} y={21} className="device-proposed">{proposedText(placed.device.name)}</text>
                 )}
               </g>
             ))}
