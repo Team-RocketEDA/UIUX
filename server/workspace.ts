@@ -47,6 +47,25 @@ class HttpError extends Error {
   }
 }
 
+// This server edits files, runs tools and drives the agent, so only this page may call it:
+// the Host must be loopback (no DNS rebinding) and a browser's Origin, when sent, must be this server.
+function crossSite(req: IncomingMessage): string | undefined {
+  const host = req.headers.host ?? "";
+  const hostname = host.replace(/:\d+$/, "").replace(/^\[|\]$/g, "");
+  if (!["localhost", "127.0.0.1", "::1"].includes(hostname)) return `Refused: Host ${host} is not this machine.`;
+  const origin = req.headers.origin;
+  if (origin && origin !== "null") {
+    try {
+      if (new URL(origin).host === host) return undefined;
+    } catch {
+      // fall through
+    }
+    return `Refused: requests from ${origin} are not allowed.`;
+  }
+  if (origin === "null" && req.method !== "GET" && req.method !== "HEAD") return "Refused: opaque origin.";
+  return undefined;
+}
+
 function json(res: ServerResponse, status: number, body: unknown) {
   res.writeHead(status, { "Content-Type": "application/json" });
   res.end(JSON.stringify(body));
@@ -249,13 +268,18 @@ export function createWorkspace(options: WorkspaceOptions) {
     if (!sim?.sources?.length) throw new HttpError(400, "constraints.yaml has no simulation block (sources, analyses) to run.");
     const checks: any[] = constraints.checks ?? [];
     if (!checks.length) throw new HttpError(400, "constraints.yaml has no checks to measure.");
-    if (!existsSync(engineHome)) throw new HttpError(503, `Rocket Engine not found at ${engineHome} (set ROCKET_ENGINE_HOME).`);
     const args = { sources: sim.sources, analyses: sim.analyses ?? [], measurements: checks.map((c) => ({ name: c.metric })) };
+    return callEngine(open, sim.operation ?? "run_spice", args);
+  }
+
+  // One engine operation through the project-bound MCP server (validation, two-phase runs, evidence).
+  async function callEngine(open: Open, operation: string, args: Record<string, unknown>) {
+    if (!existsSync(engineHome)) throw new HttpError(503, `Rocket Engine not found at ${engineHome} (set ROCKET_ENGINE_HOME).`);
     try {
       const { stdout } = await run(
         "uv",
         ["run", "--quiet", "--project", engineHome, "python", "-m", "rocket_engine.adapters.mcp.server",
-         "--project", open.name, "--project-dir", open.dir, "--call", sim.operation ?? "run_spice", "--args", JSON.stringify(args)],
+         "--project", open.name, "--project-dir", open.dir, "--call", operation, "--args", JSON.stringify(args)],
         { timeout: 300_000, maxBuffer: 16 * 1024 * 1024 },
       );
       return JSON.parse(stdout);
@@ -264,6 +288,12 @@ export function createWorkspace(options: WorkspaceOptions) {
       if (out.startsWith("{")) return JSON.parse(out);
       throw new HttpError(500, `Engine call failed: ${error?.stderr || error?.message}`);
     }
+  }
+
+  // Read-only engine queries, plus the run operations the engine itself lists.
+  const ENGINE_QUERIES = ["list_job_kinds", "get_check_results", "get_job_status", "get_logs"];
+  async function consoleOperations() {
+    return [...ENGINE_QUERIES, ...(await engineJobKinds().catch(() => [])).map((kind) => kind.operation)];
   }
 
   async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
@@ -342,6 +372,33 @@ export function createWorkspace(options: WorkspaceOptions) {
         return json(res, 200, readEvidence(project().dir));
       case "POST /api/project/checks/run":
         return json(res, 200, await runChecks(project()));
+      case "GET /api/engine/operations":
+        return json(res, 200, await consoleOperations());
+      case "POST /api/project/engine": {
+        // The engine console: one engine operation by name with JSON arguments, nothing else.
+        const { operation, args } = await readBody(req);
+        if (!(await consoleOperations()).includes(operation)) throw new HttpError(400, `Not an engine operation: ${operation}`);
+        if (args !== undefined && (typeof args !== "object" || args === null || Array.isArray(args))) throw new HttpError(400, "Arguments must be a JSON object.");
+        return json(res, 200, await callEngine(project(), operation, args ?? {}));
+      }
+      case "GET /api/project/raw": {
+        // Binary project files (GDS for the layout viewer).
+        const rel = url.searchParams.get("path") ?? "";
+        const full = insideProject(project().dir, rel);
+        if (!existsSync(full)) throw new HttpError(404, `No such file: ${rel}`);
+        res.writeHead(200, { "Content-Type": "application/octet-stream" });
+        res.end(readFileSync(full));
+        return;
+      }
+      case "POST /api/project/open-in": {
+        // Open a project layout in KLayout on this machine.
+        const { path: rel } = await readBody(req);
+        if (!(await which("klayout"))) throw new HttpError(404, "KLayout is not installed on this machine.");
+        const full = insideProject(project().dir, String(rel ?? ""));
+        if (!/\.(gds|gds2|gdsii|oas|oasis)$/i.test(full) || !existsSync(full)) throw new HttpError(400, `Not a layout file in the project: ${rel}`);
+        spawn("klayout", [full], { detached: true, stdio: "ignore" }).unref();
+        return json(res, 200, { ok: true });
+      }
       case "GET /api/project/export": {
         const open = project();
         res.writeHead(200, { "Content-Type": "application/gzip", "Content-Disposition": `attachment; filename="${open.name}.tar.gz"` });
@@ -391,6 +448,10 @@ export function createWorkspace(options: WorkspaceOptions) {
     async handle(req: IncomingMessage, res: ServerResponse, next: () => void) {
       const url = new URL(req.url ?? "/", "http://localhost");
       try {
+        if (url.pathname.startsWith("/api/") || url.pathname.startsWith("/agent/")) {
+          const refused = crossSite(req);
+          if (refused) return json(res, 403, { error: refused });
+        }
         if (url.pathname.startsWith("/api/")) return await routeApi(req, res, url);
         if (url.pathname.startsWith("/agent/")) return proxyAgent(req, res, url);
         next();

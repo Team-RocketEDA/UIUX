@@ -99,6 +99,14 @@ export const api = {
   evidence: () => request<Evidence[]>("GET", "/api/project/checks"),
   runChecks: () => request<{ run_id: string; state: string; verdict: Verdict }>("POST", "/api/project/checks/run"),
   exportUrl: "/api/project/export",
+  engineOperations: () => request<string[]>("GET", "/api/engine/operations"),
+  engineCall: (operation: string, args: Record<string, unknown>) => request<Record<string, unknown>>("POST", "/api/project/engine", { operation, args }),
+  rawFile: async (path: string) => {
+    const response = await fetch(`/api/project/raw?path=${encodeURIComponent(path)}`);
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).error ?? `Could not read ${path}`);
+    return response.arrayBuffer();
+  },
+  openInKlayout: (path: string) => request<{ ok: true }>("POST", "/api/project/open-in", { path }),
 };
 
 export type CheckRow = {

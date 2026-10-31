@@ -15,9 +15,11 @@ import { SourceSurface } from "./components/SourceSurface";
 import { ResizeHandle } from "./components/ui";
 import { describeOperations, engineTools, SHORTCUT_PAGES, ShortcutsDialog, TopBar, type EngineToolEntry } from "./components/TopBar";
 import { PlotsView } from "./components/PlotsView";
+import { EngineConsole } from "./components/EngineConsole";
+import { LayoutView } from "./components/LayoutView";
 import { SchematicView } from "./components/SchematicView";
 import type { Proposal } from "./schematic/changes";
-import { ChecksView, ConstraintsView, EmptyView, ExportView, OverviewView, verificationReport } from "./components/WorkspaceViews";
+import { ChecksView, ConstraintsView, ExportView, OverviewView, verificationReport } from "./components/WorkspaceViews";
 
 const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
   overview: { label: "Overview", icon: "home" },
@@ -444,10 +446,20 @@ export function App() {
           <ChecksView project={project} evidence={evidence} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport}
             onOpenFile={(path) => void openFile(path)} />
         );
+      case "layout":
+        return (
+          <LayoutView
+            paths={entries.map((entry) => entry.path)}
+            revision={entries.map((entry) => entry.modified).join(",")}
+            klayout={status?.tools.klayout ?? false}
+            onAsk={openAssistant}
+            onOpenFile={(path) => void openFile(path)}
+          />
+        );
+      case "terminal":
+        return <EngineConsole project={project} evidence={evidence} />;
       case "export":
         return <ExportView project={project} evidence={evidence} onExportReport={exportReport} />;
-      default:
-        return <EmptyView surface={surface} />;
     }
   };
 

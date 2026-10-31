@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { parseDocument } from "yaml";
 import { api, checkRows, formatNumber, targetText, timeAgo, type CheckRow, type Commit, type Constraints, type Evidence, type ProjectSummary } from "../api";
 import type { EngineToolEntry } from "./TopBar";
@@ -711,41 +711,6 @@ export function ExportView({ project, evidence, onExportReport }: Common & { onE
           Download report
         </button>
       </div>
-    </div>
-  );
-}
-
-const EMPTY: Partial<Record<SurfaceId, { icon: IconName; title: string; body: string }>> = {
-  schematic: {
-    icon: "schematic",
-    title: "No schematic view yet",
-    body: "Schematic views will come from the engine's generate_views operation, which isn't wired yet. The netlists in design/ are the source of truth; open them from the explorer.",
-  },
-  layout: {
-    icon: "layout",
-    title: "No layout yet",
-    body: "This project has no GDS or layout view. Layouts appear here once a layout flow (GDSFactory, LibreLane, Magic) runs through the engine.",
-  },
-  plots: {
-    icon: "plot",
-    title: "No waveforms recorded",
-    body: "Runs currently record measured values, not full waveforms. The measurements are under Verification.",
-  },
-  terminal: {
-    icon: "terminal",
-    title: "Terminal not connected",
-    body: "Shell and Python execution stay disabled until they run in the engine's isolated worker with per-run approval.",
-  },
-};
-
-export function EmptyView({ surface }: { surface: SurfaceId }): ReactNode {
-  const info = EMPTY[surface];
-  if (!info) return null;
-  return (
-    <div className="empty-state page-surface">
-      <Icon name={info.icon} size={24} />
-      <b>{info.title}</b>
-      <span>{info.body}</span>
     </div>
   );
 }
