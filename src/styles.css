@@ -246,9 +246,23 @@ body.resizing {
   background: var(--accent);
 }
 
+/* A 1px line with a 7px grab area that sits above the panels on either side. */
 .resize-handle {
+  position: relative;
+  z-index: 3;
   flex: 0 0 1px;
   background: var(--border);
+  touch-action: none;
+}
+
+.resize-handle::after {
+  content: "";
+  position: absolute;
+  inset: 0 -3px;
+}
+
+.resize-handle.row::after {
+  inset: -3px 0;
 }
 
 .resize-handle.column {

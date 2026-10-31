@@ -29,7 +29,10 @@ export function useAgent(): Agent {
     const controller = new AbortController();
     let retry: number | undefined;
 
-    const connect = () => {
+    const connect = async () => {
+      // Opening a project starts its agent, so the first tries can come before it answers.
+      if (!sessionRef.current) await restore();
+      if (controller.signal.aborted) return;
       setConnected(true);
       client
         .subscribe((event) => {
@@ -60,16 +63,15 @@ export function useAgent(): Agent {
         const sessionId = await client.latestSession();
         if (!sessionId || controller.signal.aborted) return;
         const events = await client.history(sessionId);
-        if (controller.signal.aborted) return;
+        // A message sent meanwhile started its own session; keep that one.
+        if (controller.signal.aborted || sessionRef.current) return;
         sessionRef.current = sessionId;
         setView(events.reduce(reduce, emptyView(sessionId)));
       } catch {
-        // Agent still starting; the stream below retries.
+        // Agent still starting; connect() tries again with the stream.
       }
     };
-    void restore().finally(() => {
-      if (!controller.signal.aborted) connect();
-    });
+    void connect();
     return () => {
       controller.abort();
       window.clearTimeout(retry);
