@@ -3,7 +3,7 @@ import react from "@vitejs/plugin-react";
 import { createWorkspace, defaultOptions } from "./server/workspace";
 
 // The workspace server (projects, files, checks, the project's agent) runs inside the dev server.
-// Electron main will host the same module for the desktop app.
+// Electron main hosts the same module for the desktop app (electron/main.ts).
 function workspace(env: Record<string, string>): Plugin {
   return {
     name: "rocketeda-workspace",

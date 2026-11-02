@@ -1,5 +1,5 @@
 // Workspace server: the local backend the IDE talks to. Runs inside the Vite dev server (see
-// vite.config.ts) and is meant to become Electron main's job. It owns:
+// vite.config.ts) and inside Electron main for the desktop app (electron/main.ts). It owns:
 //   /api/*    projects, files (saves are git commits), checks through Rocket Engine, export
 //   /agent/*  the open project's agent (opencode + Rocket Fuel), proxied with its password,
 //             so no password or model key ever reaches browser code.

@@ -55,6 +55,13 @@ cd UIUX && npm install
 ROCKET_ENGINE_HOME=../rocket-engine npm run dev          # http://localhost:5173
 ```
 
+The desktop app is the same UI in an Electron window:
+
+```bash
+npm run desktop       # build, then open the app; Electron main runs the workspace server itself
+npm run desktop:dev   # with `npm run dev` running in another terminal: Electron over the dev server
+```
+
 | Variable | Default | What |
 |---|---|---|
 | `ROCKET_FUEL_HOME` | `../rocket_fuel` | the agent harness |
@@ -64,7 +71,8 @@ ROCKET_ENGINE_HOME=../rocket-engine npm run dev          # http://localhost:5173
 
 The workspace server (`server/workspace.ts`) runs inside the Vite dev server: projects, files, git, checks through
 the engine, and the project's agent, proxied at `/agent` with its password added server-side, so no password or
-model key reaches browser code. Electron main is meant to host the same module.
+model key reaches browser code. In the desktop app Electron main (`electron/main.ts`) hosts the same module on a
+loopback port, next to the built UI, and reads the same variables (shell or `.env`).
 
 ## Architecture direction
 
