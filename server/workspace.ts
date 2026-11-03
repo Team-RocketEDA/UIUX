@@ -150,7 +150,8 @@ function readEvidence(dir: string): any[] {
         return null;
       }
     })
-    .filter(Boolean)
+    // The folder also holds solver scratch files and datasets; only the engine's run records have a verdict.
+    .filter((record) => record?.verdict && record.run_id)
     .sort((a, b) => String(b.finished_at).localeCompare(String(a.finished_at)));
 }
 

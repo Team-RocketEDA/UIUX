@@ -265,8 +265,9 @@ export function App() {
     const id = `job-${Date.now()}`;
     const startedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     setRunning(true);
-    setJobs((previous) => [{ id, title: "Run checks", tool: "ngspice via Rocket Engine", status: "running" as const, progress: 10,
-      logs: [`$ run_spice ${(project.constraints.simulation?.sources ?? []).join(" ")}`], startedAt }, ...previous].slice(0, 10));
+    const operation = project.constraints.simulation?.operation ?? "run_spice";
+    setJobs((previous) => [{ id, title: "Run checks", tool: `${operation} via Rocket Engine`, status: "running" as const, progress: 10,
+      logs: [`$ ${operation} ${(project.constraints.simulation?.sources ?? []).join(" ")}`], startedAt }, ...previous].slice(0, 10));
     setActiveJobId(id);
     setConsoleOpen(true);
     try {

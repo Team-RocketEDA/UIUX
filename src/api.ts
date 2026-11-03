@@ -123,15 +123,17 @@ export type CheckRow = {
 // older commit, or from a working tree with unsaved design changes, is marked stale.
 export function checkRows(constraints: Constraints, evidence: Evidence[], revision: string): CheckRow[] {
   return (constraints.checks ?? []).map((check) => {
+    // A solver with no measurements, such as an HDL testbench, gives one verdict for the whole run.
     const latest = evidence.find(
-      (e) => e.verdict.status === "NOT_RUN" || e.verdict.measurements?.some((m) => m.name === check.metric),
+      (e) => e.verdict.status === "NOT_RUN" || !e.verdict.measurements?.length || e.verdict.measurements.some((m) => m.name === check.metric),
     );
     if (!latest) return { check, status: "NOT_RUN_YET", stale: false };
     const stale = latest.source_commit !== revision || !!latest.source_dirty;
     if (latest.verdict.status === "NOT_RUN" || latest.verdict.status === "UNSUPPORTED") {
       return { check, status: latest.verdict.status, stale, evidence: latest, reason: latest.verdict.reason };
     }
-    const measurement = latest.verdict.measurements!.find((m) => m.name === check.metric)!;
+    const measurement = latest.verdict.measurements?.find((m) => m.name === check.metric);
+    if (!measurement) return { check, status: latest.verdict.status, stale, evidence: latest };
     return { check, status: measurement.status === "pass" ? "PASS" : "FAIL", stale, measurement, evidence: latest };
   });
 }
