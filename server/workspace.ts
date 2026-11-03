@@ -1,5 +1,5 @@
 // Workspace server: the local backend the IDE talks to. Runs inside the Vite dev server (see
-// vite.config.ts) and is meant to become Electron main's job. It owns:
+// vite.config.ts) and inside Electron main for the desktop app (electron/main.ts). It owns:
 //   /api/*    projects, files (saves are git commits), checks through Rocket Engine, export
 //   /agent/*  the open project's agent (opencode + Rocket Fuel), proxied with its password,
 //             so no password or model key ever reaches browser code.
@@ -12,12 +12,15 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
+import { FuelClient } from "../src/agent/fuel/client";
+import { followAgentEdits } from "./agentEdits";
 
 const run = promisify(execFile);
 
 export type WorkspaceOptions = { fuelHome: string; engineHome: string; projectsDir: string; agentUrl?: string };
 
-type Agent = { port: number; password: string; proc: ChildProcess; state: "starting" | "ready" | "error"; error?: string };
+// edits ends the commit-per-edit follower (agentEdits.ts) when the agent stops.
+type Agent = { port: number; password: string; proc: ChildProcess; state: "starting" | "ready" | "error"; error?: string; edits: AbortController };
 type Open = { name: string; dir: string; agent?: Agent };
 
 const TEMPLATES = ["opamp-engine", "empty"];
@@ -164,6 +167,7 @@ export function createWorkspace(options: WorkspaceOptions) {
   }
 
   function stopAgent() {
+    current?.agent?.edits.abort();
     if (current?.agent?.proc.pid) {
       try {
         process.kill(-current.agent.proc.pid, "SIGTERM");
@@ -184,9 +188,10 @@ export function createWorkspace(options: WorkspaceOptions) {
       detached: true,
       stdio: "ignore",
     });
-    const agent: Agent = { port, password, proc, state: "starting" };
+    const agent: Agent = { port, password, proc, state: "starting", edits: new AbortController() };
     open.agent = agent;
     proc.on("exit", (code) => {
+      agent.edits.abort();
       if (agent.state !== "error") {
         agent.state = "error";
         agent.error = `Agent exited (${code}).`;
@@ -206,6 +211,10 @@ export function createWorkspace(options: WorkspaceOptions) {
     if (agent.state === "starting") {
       agent.state = "error";
       agent.error = "Agent did not start within 60 s.";
+    }
+    // The assistant's edits are committed like IDE saves, so the engine's next run isn't stale.
+    if (agent.state === "ready") {
+      void followAgentEdits(new FuelClient({ baseUrl: `http://127.0.0.1:${port}`, password }), open.dir, agent.edits.signal, (rel) => !isReadOnly(rel));
     }
   }
 
