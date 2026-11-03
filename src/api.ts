@@ -121,6 +121,11 @@ export type CheckRow = {
 
 // A check's status comes only from the latest engine evidence that measured it. Evidence from an
 // older commit, or from a working tree with unsaved design changes, is marked stale.
+// Only a real FAIL is a failure: NOT_RUN and UNSUPPORTED mean the check never ran.
+export function jobStatus(verdict: string): "passed" | "failed" | "not_run" {
+  return verdict === "PASS" ? "passed" : verdict === "FAIL" ? "failed" : "not_run";
+}
+
 export function checkRows(constraints: Constraints, evidence: Evidence[], revision: string): CheckRow[] {
   return (constraints.checks ?? []).map((check) => {
     // A solver with no measurements, such as an HDL testbench, gives one verdict for the whole run.
