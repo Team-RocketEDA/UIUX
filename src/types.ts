@@ -27,7 +27,7 @@ export type Job = {
   id: string;
   title: string;
   tool: string;
-  status: "running" | "passed" | "failed";
+  status: "running" | "passed" | "failed" | "not_run";
   progress: number;
   logs: string[];
   startedAt: string;

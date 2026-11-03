@@ -150,7 +150,8 @@ function readEvidence(dir: string): any[] {
         return null;
       }
     })
-    .filter(Boolean)
+    // The folder also holds solver scratch files and datasets; only the engine's run records have a verdict.
+    .filter((record) => record?.verdict && record.run_id)
     .sort((a, b) => String(b.finished_at).localeCompare(String(a.finished_at)));
 }
 
@@ -277,8 +278,18 @@ export function createWorkspace(options: WorkspaceOptions) {
     if (!sim?.sources?.length) throw new HttpError(400, "constraints.yaml has no simulation block (sources, analyses) to run.");
     const checks: any[] = constraints.checks ?? [];
     if (!checks.length) throw new HttpError(400, "constraints.yaml has no checks to measure.");
-    const args = { sources: sim.sources, analyses: sim.analyses ?? [], measurements: checks.map((c) => ({ name: c.metric })) };
-    return callEngine(open, sim.operation ?? "run_spice", args);
+    const operation = sim.operation ?? "run_spice";
+    // Only SPICE takes measurements here, and has its sources confined to the project by the server. Other
+    // solvers read their targets from the source they run, and run from another folder, so get full paths.
+    const args: Record<string, unknown> = operation === "run_spice"
+      ? { sources: sim.sources, analyses: sim.analyses ?? [], measurements: checks.map((c) => ({ name: c.metric })) }
+      : {
+          sources: sim.sources.map((source: string) => path.join(open.dir, source)),
+          // Solvers write scratch files and read relative data here; results/ is the project's own run exhaust.
+          workdir: insideProject(open.dir, sim.workdir ?? path.join("results", "engine-runs")),
+        };
+    mkdirSync(String(args.workdir ?? open.dir), { recursive: true });
+    return callEngine(open, operation, args);
   }
 
   // One engine operation through the project-bound MCP server (validation, two-phase runs, evidence).

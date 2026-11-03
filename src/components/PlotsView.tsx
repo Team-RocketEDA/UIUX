@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { PointerEvent as ReactPointerEvent } from "react";
+import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { formatNumber, timeAgo, type Constraints, type Evidence } from "../api";
 import { bode, nearest, parseRawfile, unityGain, type BodePoint, type RawPlot } from "../plots/rawfile";
 import { formatEng } from "../schematic/netlist";
@@ -35,19 +35,32 @@ const cmp = (comparison: string) => ({ ">=": "≥", "<=": "≤" })[comparison] ?
 
 const runLabel = (run: Evidence) => `${new Date(run.finished_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} · ${run.verdict.status}`;
 
-export function PlotsView({
-  evidence,
-  constraints,
-  running,
-  readFile,
-  onRunChecks,
-}: {
+type PlotsProps = {
   evidence: Evidence[];
   constraints: Constraints;
   running: boolean;
   readFile: (path: string) => Promise<string>;
   onRunChecks: () => void;
-}) {
+};
+
+const hasDataset = (run: Evidence, analysis: string) => !!run.datasets?.some((d) => d.analysis === analysis);
+
+// Plots: the frequency response of the latest SPICE run, and the spectrum of the latest optical run.
+export function PlotsView(props: PlotsProps) {
+  const hasAc = props.evidence.some((run) => hasDataset(run, "ac"));
+  const hasOptical = props.evidence.some((run) => hasDataset(run, "optical"));
+  const [kind, setKind] = useState<"ac" | "optical">();
+  const shown = kind ?? (!hasAc && hasOptical ? "optical" : "ac");
+  const switcher = hasAc && hasOptical ? (
+    <div className="segmented" role="tablist" aria-label="Plot">
+      <button className={shown === "ac" ? "active" : ""} onClick={() => setKind("ac")}>Frequency response</button>
+      <button className={shown === "optical" ? "active" : ""} onClick={() => setKind("optical")}>Optical spectrum</button>
+    </div>
+  ) : null;
+  return shown === "optical" ? <OpticalPlots {...props} switcher={switcher} /> : <BodePlots {...props} switcher={switcher} />;
+}
+
+function BodePlots({ evidence, constraints, running, readFile, onRunChecks, switcher }: PlotsProps & { switcher: ReactNode }) {
   const runs = useMemo(
     () => evidence.filter((run) => run.datasets?.some((d) => d.analysis === "ac")).sort((a, b) => b.finished_at.localeCompare(a.finished_at)),
     [evidence],
@@ -76,10 +89,13 @@ export function PlotsView({
       title="Frequency response"
       subtitle="Drawn from the engine's own ngspice sweep. Targets come from constraints.yaml; the verdict stays the engine's."
       actions={
-        <button className="btn primary" onClick={onRunChecks} disabled={running}>
-          <Icon name="play" size={13} />
-          {running ? "Running…" : "Run checks"}
-        </button>
+        <>
+          {switcher}
+          <button className="btn primary" onClick={onRunChecks} disabled={running}>
+            <Icon name="play" size={13} />
+            {running ? "Running…" : "Run checks"}
+          </button>
+        </>
       }
     />
   );
@@ -295,6 +311,149 @@ export function PlotsView({
               <span key={m.name} className="verdict-chip">
                 <span className="mono">{m.name}</span>
                 <b>{formatNumber(m.value)} {m.unit}</b>
+                <StatusPill status={m.status === "pass" ? "passed" : "failed"} label={m.status.toUpperCase()} />
+              </span>
+            ))}
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+type Spectrum = { from: string; to: string; wavelength_nm: number[]; transmission_db: (number | null)[] };
+type SpectrumPoint = { wl: number; db: number | null };
+
+// Transmission against wavelength from the engine's optical run (results/engine-runs/<run_id>-optical.json),
+// one line per port pair, with the engine's measured points and their targets.
+function OpticalPlots({ evidence, readFile, switcher }: PlotsProps & { switcher: ReactNode }) {
+  const runs = useMemo(() => evidence.filter((run) => hasDataset(run, "optical")).sort((a, b) => b.finished_at.localeCompare(a.finished_at)), [evidence]);
+  const latest = runs[0];
+  const [spectra, setSpectra] = useState<Record<string, Spectrum[] | string>>({});
+  const [hoverWl, setHoverWl] = useState<number>();
+
+  useEffect(() => {
+    if (!latest || spectra[latest.run_id] !== undefined) return;
+    const path = latest.datasets!.find((d) => d.analysis === "optical")!.path;
+    readFile(path)
+      .then((text) => setSpectra((prev) => ({ ...prev, [latest.run_id]: JSON.parse(text) as Spectrum[] })))
+      .catch((err) => setSpectra((prev) => ({ ...prev, [latest.run_id]: err instanceof Error ? err.message : String(err) })));
+  }, [latest?.run_id]);
+
+  const header = (
+    <SurfaceHeader
+      eyebrow={latest ? `Plots · optical run ${timeAgo(latest.finished_at)} · ${latest.sources.join(", ")}` : "Plots"}
+      title="Optical spectrum"
+      subtitle="Transmission between ports across the swept wavelengths, from the engine's own optical simulation. The verdict stays the engine's."
+      actions={switcher}
+    />
+  );
+  if (!latest) return <div className="page-surface">{header}</div>;
+  const data = spectra[latest.run_id];
+  if (typeof data === "string") return <div className="page-surface">{header}<div className="notice error">Could not read the spectrum: {data}</div></div>;
+  if (!data) return <div className="page-surface">{header}<div className="schematic-loading">Reading the spectrum…</div></div>;
+
+  const series = data.map((spectrum, i) => ({
+    key: `${spectrum.from}>${spectrum.to}`,
+    label: `${spectrum.from} → ${spectrum.to}`,
+    color: SERIES[i] ?? "#84807a",
+    points: spectrum.wavelength_nm.map((wl, j) => ({ wl, db: spectrum.transmission_db[j] })) as SpectrumPoint[],
+  }));
+  // The engine's measured points: "T(in0->out1)@1550.0nm" with min_db / max_db.
+  const marks = (latest.verdict.measurements ?? []).flatMap((m) => {
+    const match = m.name.match(/^T\((\w+)->(\w+)\)@([\d.]+)nm$/);
+    if (!match) return [];
+    const s = series.find((x) => x.key === `${match[1]}>${match[2]}`);
+    return [{ m, wl: Number(match[3]), color: s?.color ?? "#84807a" }];
+  });
+  const finite = series.flatMap((s) => s.points.map((p) => p.db)).filter((v): v is number => v !== null && Number.isFinite(v));
+  const bounds = marks.flatMap(({ m }) => [m.target.min_db, m.target.max_db]).filter((v): v is number => typeof v === "number");
+  const floor = Math.max(Math.min(...finite, ...bounds) - 3, -80);
+  const scale = niceTicks(floor, Math.max(0, ...finite, ...bounds), 6);
+  const H = 300;
+  const wls = series.flatMap((s) => s.points.map((p) => p.wl));
+  const wMin = Math.min(...wls);
+  const wMax = Math.max(...wls);
+  const xTicks = niceTicks(wMin, wMax, 8).ticks.filter((t) => t >= wMin && t <= wMax);
+  const x = (wl: number) => PAD.left + ((wl - wMin) / (wMax - wMin || 1)) * (W - PAD.left - PAD.right);
+  const y = (db: number) => PAD.top + (1 - (Math.max(db, scale.lo) - scale.lo) / (scale.hi - scale.lo)) * (H - PAD.top - PAD.bottom);
+  const line = (points: SpectrumPoint[]) => points.map((p, i) => `${i ? "L" : "M"}${x(p.wl).toFixed(1)},${y(p.db ?? scale.lo).toFixed(1)}`).join("");
+  const nearestWl = (points: SpectrumPoint[], wl: number) => points.reduce((best, p) => (Math.abs(p.wl - wl) < Math.abs(best.wl - wl) ? p : best), points[0]);
+  const hover = hoverWl === undefined ? undefined : series.map((s) => ({ s, p: nearestWl(s.points, hoverWl) }));
+  const onMove = (event: ReactPointerEvent<SVGRectElement>) => {
+    const rect = event.currentTarget.ownerSVGElement!.getBoundingClientRect();
+    const px = ((event.clientX - rect.left) / rect.width) * W;
+    setHoverWl(px < PAD.left || px > W - PAD.right ? undefined : wMin + ((px - PAD.left) / (W - PAD.left - PAD.right)) * (wMax - wMin));
+  };
+  const dbText = (db: number | null) => (db === null ? `below ${scale.lo} dB` : `${formatNumber(db)} dB`);
+
+  return (
+    <div className="page-surface plots-page">
+      {header}
+      <section className="panel plot-panel">
+        <div className="plot-legend">
+          {series.map((s) => (
+            <span key={s.key}><i style={{ background: s.color }} />{s.label}</span>
+          ))}
+          {hover && (
+            <span className="plot-readout">
+              {formatNumber(hover[0].p.wl)} nm
+              {hover.map(({ s, p }) => (
+                <b key={s.key} style={{ borderColor: s.color }}>{dbText(p.db)}</b>
+              ))}
+            </span>
+          )}
+        </div>
+        <h4 className="plot-title">Transmission</h4>
+        <svg viewBox={`0 0 ${W} ${H}`} className="plot" role="img" aria-label="Optical transmission against wavelength">
+          {scale.ticks.map((t) => (
+            <g key={t}>
+              <line x1={PAD.left} x2={W - PAD.right} y1={y(t)} y2={y(t)} className="grid" />
+              <text x={PAD.left - 8} y={y(t) + 3.5} className="axis-label" textAnchor="end">{t} dB</text>
+            </g>
+          ))}
+          {xTicks.map((t) => (
+            <g key={t}>
+              <line x1={x(t)} x2={x(t)} y1={PAD.top} y2={H - PAD.bottom} className="grid" />
+              <text x={x(t)} y={H - 8} className="axis-label" textAnchor="middle">{t} nm</text>
+            </g>
+          ))}
+          <line x1={PAD.left} x2={W - PAD.right} y1={y(0)} y2={y(0)} className="zero" />
+          {[...series].reverse().map((s) => (
+            <path key={s.key} d={line(s.points)} className="trace" style={{ stroke: s.color }} />
+          ))}
+          {marks.map(({ m, wl, color }) => {
+            const limit = m.target.min_db ?? m.target.max_db;
+            return (
+              <g key={m.name} className="target">
+                {limit !== undefined && <line x1={x(wl) - 14} x2={x(wl) + 14} y1={y(limit)} y2={y(limit)} />}
+                {m.value !== null && <circle cx={x(wl)} cy={y(m.value)} r={4} style={{ fill: color, stroke: "none" }} />}
+                <text x={x(wl) + 8} y={y(m.value ?? scale.lo) - 8}>
+                  {m.status === "pass" ? "✓" : "✗"} {m.target.min_db !== undefined ? `≥ ${m.target.min_db}` : `≤ ${m.target.max_db}`} dB
+                </text>
+              </g>
+            );
+          })}
+          {hover && (
+            <g className="crosshair">
+              <line x1={x(hover[0].p.wl)} x2={x(hover[0].p.wl)} y1={PAD.top} y2={H - PAD.bottom} />
+              {hover.map(({ s, p }) => <circle key={s.key} cx={x(p.wl)} cy={y(p.db ?? scale.lo)} r={4} style={{ fill: s.color }} />)}
+            </g>
+          )}
+          <rect x={PAD.left} y={0} width={W - PAD.left - PAD.right} height={H} className="hit" onPointerMove={onMove} onPointerLeave={() => setHoverWl(undefined)} />
+        </svg>
+      </section>
+      {marks.length > 0 && (
+        <section className="panel">
+          <div className="panel-heading">
+            <span className="eyebrow">Engine verdict for this run</span>
+            <StatusPill status={latest.verdict.status === "PASS" ? "passed" : latest.verdict.status === "FAIL" ? "failed" : "skipped"} label={latest.verdict.status} />
+          </div>
+          <div className="verdict-chips">
+            {marks.map(({ m }) => (
+              <span key={m.name} className="verdict-chip">
+                <span className="mono">{m.name}</span>
+                <b>{formatNumber(m.value)} dB</b>
                 <StatusPill status={m.status === "pass" ? "passed" : "failed"} label={m.status.toUpperCase()} />
               </span>
             ))}

@@ -47,8 +47,8 @@ Clone the repos side by side, then:
 # rocket_fuel: the agent (pinned opencode)
 cd rocket_fuel && npm install && cp .env.example .env    # set ROCKET_MODEL / MODEL_API_KEY in .env
 
-# rocket-engine: branch with the MCP server and fixes (PR #3), plus ngspice on PATH
-cd rocket-engine && git checkout fuel-mcp-fixes && uv sync
+# rocket-engine: the branch with the MCP server, plus ngspice on PATH
+cd rocket-engine && git checkout GREEN-the-tests && uv sync
 
 # this repo
 cd UIUX && npm install
@@ -60,6 +60,12 @@ The desktop app is the same UI in an Electron window:
 ```bash
 npm run desktop       # build, then open the app; Electron main runs the workspace server itself
 npm run desktop:dev   # with `npm run dev` running in another terminal: Electron over the dev server
+```
+
+To serve the same app to a browser with no dev server or Electron, as the RocketIDE bundle and its Docker image do:
+
+```bash
+npm run serve         # http://localhost:5173; set ROCKET_UI_HOST and ROCKET_UI_PORT to change the address
 ```
 
 | Variable | Default | What |

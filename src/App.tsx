@@ -3,7 +3,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { api, checkRows, type Evidence, type FileEntry, type ProjectSummary, type WorkspaceStatus } from "./api";
+import { api, checkRows, formatNumber, jobStatus, type Evidence, type FileEntry, type ProjectSummary, type WorkspaceStatus } from "./api";
 import type { ActiveView, Job, ProjectFile, SurfaceId } from "./types";
 import { ActivityBar } from "./components/ActivityBar";
 import { AssistantPanel } from "./components/AssistantPanel";
@@ -265,8 +265,9 @@ export function App() {
     const id = `job-${Date.now()}`;
     const startedAt = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     setRunning(true);
-    setJobs((previous) => [{ id, title: "Run checks", tool: "ngspice via Rocket Engine", status: "running" as const, progress: 10,
-      logs: [`$ run_spice ${(project.constraints.simulation?.sources ?? []).join(" ")}`], startedAt }, ...previous].slice(0, 10));
+    const operation = project.constraints.simulation?.operation ?? "run_spice";
+    setJobs((previous) => [{ id, title: "Run checks", tool: `${operation} via Rocket Engine`, status: "running" as const, progress: 10,
+      logs: [`$ ${operation} ${(project.constraints.simulation?.sources ?? []).join(" ")}`], startedAt }, ...previous].slice(0, 10));
     setActiveJobId(id);
     setConsoleOpen(true);
     try {
@@ -277,11 +278,11 @@ export function App() {
       const verdict = result.verdict;
       const lines = [
         ...(record?.log ? record.log.split("\n").slice(-40) : []),
-        ...(verdict.measurements ?? []).map((m) => `${m.name} = ${m.value.toFixed(3)} ${m.unit} (${m.status}, margin ${m.margin.toFixed(3)})`),
+        ...(verdict.measurements ?? []).map((m) => `${m.name} = ${formatNumber(m.value)} ${m.unit} (${m.status}, margin ${formatNumber(m.margin)})`),
         `verdict: ${verdict.status}${verdict.reason ? ` (${verdict.reason})` : ""} · run ${result.run_id}`,
       ];
       setJobs((previous) => previous.map((job) => (job.id === id
-        ? { ...job, status: verdict.status === "PASS" ? "passed" as const : "failed" as const, progress: 100, logs: [...job.logs, ...lines] }
+        ? { ...job, status: jobStatus(verdict.status), progress: 100, logs: [...job.logs, ...lines] }
         : job)));
       notify(`Checks finished: ${verdict.status.replace("_", " ")}.`);
     } catch (err) {

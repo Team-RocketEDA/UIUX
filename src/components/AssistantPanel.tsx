@@ -20,12 +20,12 @@ function stepDetail(step: ToolStep): string {
     .map(shortPath)
     .join(" · ");
   if (step.error) return step.error.split("\n")[0];
-  if (step.output && (step.tool === "engine_run_job" || step.tool === "engine_get_job_status" || step.tool === "rocket_run_job")) {
+  if (step.output && (step.tool === "engine_run_spice" || step.tool === "engine_run_job" || step.tool === "engine_get_job_status" || step.tool === "rocket_run_job")) {
     try {
       const result = JSON.parse(step.output);
       const verdict = result.verdict ?? result;
       if (verdict.measurements) {
-        return `${verdict.status} · ` + verdict.measurements.map((m: { name: string; value: number }) => `${m.name} ${m.value.toFixed(2)}`).join(", ");
+        return `${verdict.status} · ` + verdict.measurements.map((m: { name: string; value: number | null }) => `${m.name} ${m.value === null ? "—" : m.value.toFixed(2)}`).join(", ");
       }
       if (verdict.status) return `${verdict.status}${verdict.reason ? ` · ${verdict.reason}` : ""}`;
       if (result.ok === false) return result.message ?? result.code;

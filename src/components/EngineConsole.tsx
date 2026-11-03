@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { api, type Evidence, type ProjectSummary } from "../api";
+import { api, formatNumber, type Evidence, type ProjectSummary } from "../api";
 import { Icon } from "./icons";
 import { SurfaceHeader } from "./ui";
 
@@ -32,9 +32,9 @@ function template(operation: string, project: ProjectSummary, evidence: Evidence
 }
 
 function summary(result: Record<string, unknown>): string | undefined {
-  const verdict = (result.verdict ?? undefined) as { status?: string; reason?: string; measurements?: { name: string; value: number; status: string }[] } | undefined;
+  const verdict = (result.verdict ?? undefined) as { status?: string; reason?: string; measurements?: { name: string; value: number | null; status: string }[] } | undefined;
   if (verdict?.status) {
-    const measured = verdict.measurements?.map((m) => `${m.name} ${m.value.toFixed(2)} ${m.status}`).join(" · ");
+    const measured = verdict.measurements?.map((m) => `${m.name} ${formatNumber(m.value)} ${m.status}`).join(" · ");
     return `${verdict.status}${verdict.reason ? ` (${verdict.reason})` : ""}${measured ? ` · ${measured}` : ""}`;
   }
   if (result.ok === false) return `${result.code ?? "error"}: ${result.message ?? ""}`;

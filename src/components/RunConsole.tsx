@@ -81,8 +81,10 @@ export function RunConsole({
                       <span className="spinner" />
                     ) : job.status === "passed" ? (
                       <Icon name="check" size={12} />
-                    ) : (
+                    ) : job.status === "failed" ? (
                       <Icon name="x" size={12} />
+                    ) : (
+                      "–"
                     )}
                   </span>
                   <span className="job-copy">
@@ -111,7 +113,7 @@ export function RunConsole({
                   </div>
                   <span className={`job-status-text ${selectedJob.status}`}>
                     <span className="status-dot" />
-                    {selectedJob.status.toUpperCase()}
+                    {selectedJob.status.replace("_", " ").toUpperCase()}
                   </span>
                 </div>
                 <div className="job-logs" ref={logRef}>
