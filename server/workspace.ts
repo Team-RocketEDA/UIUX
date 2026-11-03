@@ -280,9 +280,14 @@ export function createWorkspace(options: WorkspaceOptions) {
     const operation = sim.operation ?? "run_spice";
     // Only SPICE takes measurements here, and has its sources confined to the project by the server. Other
     // solvers read their targets from the source they run, and run from another folder, so get full paths.
-    const args = operation === "run_spice"
+    const args: Record<string, unknown> = operation === "run_spice"
       ? { sources: sim.sources, analyses: sim.analyses ?? [], measurements: checks.map((c) => ({ name: c.metric })) }
-      : { sources: sim.sources.map((source: string) => path.join(open.dir, source)) };
+      : {
+          sources: sim.sources.map((source: string) => path.join(open.dir, source)),
+          // Solvers write scratch files and read relative data here; results/ is the project's own run exhaust.
+          workdir: insideProject(open.dir, sim.workdir ?? path.join("results", "engine-runs")),
+        };
+    mkdirSync(String(args.workdir ?? open.dir), { recursive: true });
     return callEngine(open, operation, args);
   }
 
