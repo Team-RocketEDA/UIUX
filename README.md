@@ -62,6 +62,12 @@ npm run desktop       # build, then open the app; Electron main runs the workspa
 npm run desktop:dev   # with `npm run dev` running in another terminal: Electron over the dev server
 ```
 
+To serve the same app to a browser with no dev server or Electron, as the RocketIDE bundle and its Docker image do:
+
+```bash
+npm run serve         # http://localhost:5173; set ROCKET_UI_HOST and ROCKET_UI_PORT to change the address
+```
+
 | Variable | Default | What |
 |---|---|---|
 | `ROCKET_FUEL_HOME` | `../rocket_fuel` | the agent harness |
