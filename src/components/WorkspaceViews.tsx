@@ -32,7 +32,7 @@ function measuredText(row: CheckRow) {
   if (!row.measurement) return row.reason ?? "—";
   const unit = row.check.unit ? ` ${row.check.unit}` : "";
   const margin = row.measurement.margin;
-  return `${formatNumber(row.measurement.value)}${unit} (${margin >= 0 ? "+" : ""}${formatNumber(margin)})`;
+  return `${formatNumber(row.measurement.value)}${unit} (${margin !== null && margin >= 0 ? "+" : ""}${formatNumber(margin)})`;
 }
 
 type Action = { icon: IconName; title: string; detail: string; run: () => void };

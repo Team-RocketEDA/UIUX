@@ -47,8 +47,8 @@ Clone the repos side by side, then:
 # rocket_fuel: the agent (pinned opencode)
 cd rocket_fuel && npm install && cp .env.example .env    # set ROCKET_MODEL / MODEL_API_KEY in .env
 
-# rocket-engine: branch with the MCP server and fixes (PR #3), plus ngspice on PATH
-cd rocket-engine && git checkout fuel-mcp-fixes && uv sync
+# rocket-engine: the branch with the MCP server, plus ngspice on PATH
+cd rocket-engine && git checkout GREEN-the-tests && uv sync
 
 # this repo
 cd UIUX && npm install

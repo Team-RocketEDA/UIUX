@@ -3,7 +3,7 @@ import type {
   KeyboardEvent as ReactKeyboardEvent,
   PointerEvent as ReactPointerEvent,
 } from "react";
-import { api, checkRows, type Evidence, type FileEntry, type ProjectSummary, type WorkspaceStatus } from "./api";
+import { api, checkRows, formatNumber, type Evidence, type FileEntry, type ProjectSummary, type WorkspaceStatus } from "./api";
 import type { ActiveView, Job, ProjectFile, SurfaceId } from "./types";
 import { ActivityBar } from "./components/ActivityBar";
 import { AssistantPanel } from "./components/AssistantPanel";
@@ -277,7 +277,7 @@ export function App() {
       const verdict = result.verdict;
       const lines = [
         ...(record?.log ? record.log.split("\n").slice(-40) : []),
-        ...(verdict.measurements ?? []).map((m) => `${m.name} = ${m.value.toFixed(3)} ${m.unit} (${m.status}, margin ${m.margin.toFixed(3)})`),
+        ...(verdict.measurements ?? []).map((m) => `${m.name} = ${formatNumber(m.value)} ${m.unit} (${m.status}, margin ${formatNumber(m.margin)})`),
         `verdict: ${verdict.status}${verdict.reason ? ` (${verdict.reason})` : ""} · run ${result.run_id}`,
       ];
       setJobs((previous) => previous.map((job) => (job.id === id

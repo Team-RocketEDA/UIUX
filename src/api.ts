@@ -54,7 +54,8 @@ export type Commit = { hash: string; author: string; date: string; subject: stri
 
 export type FileEntry = { path: string; size: number; modified: number; readOnly: boolean };
 
-export type Measurement = { name: string; value: number; unit: string; target: { min?: number; max?: number }; margin: number; status: "pass" | "fail" };
+// value and margin are null when the engine measured no finite number (e.g. a perfect optical null, -inf dB).
+export type Measurement = { name: string; value: number | null; unit: string; target: { min?: number; max?: number; min_db?: number; max_db?: number }; margin: number | null; status: "pass" | "fail" };
 
 export type Verdict = { status: "PASS" | "FAIL" | "NOT_RUN" | "UNSUPPORTED"; reason?: string; measurements?: Measurement[]; finding_counts?: Record<string, number> };
 
@@ -139,7 +140,8 @@ export function targetText(check: ConstraintCheck) {
   return `${check.comparison} ${check.value}${check.unit ? ` ${check.unit}` : ""}`;
 }
 
-export function formatNumber(value: number) {
+export function formatNumber(value: number | null | undefined) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "—";
   return Math.abs(value) >= 100 ? value.toFixed(1) : value.toFixed(2);
 }
 
