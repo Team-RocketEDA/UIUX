@@ -20,6 +20,8 @@ export function stepFile(step: ToolStep, projectDir: string): string | undefined
   if (!raw) return undefined;
   const root = projectDir.replace(/\/+$/, "") + "/";
   if (raw.startsWith(root)) return raw.slice(root.length);
+  // A recording's paths are rewritten to this, to keep local folders out of it.
+  if (raw.startsWith("/project/")) return raw.slice("/project/".length);
   return raw.startsWith("/") || raw.startsWith("..") ? undefined : raw.replace(/^\.\//, "");
 }
 

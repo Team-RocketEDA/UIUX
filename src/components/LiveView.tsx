@@ -105,7 +105,7 @@ function SvgDrawing({ scene, onDone }: { scene: Scene; onDone: () => void }) {
     paper.current?.replaceChildren(svg);
   }, [scene.source]);
   useDrawing(paper, scene.id, onDone);
-  if (failed) return <img className="live-paper-image" src={viewUrl(scene.file!)} alt="" onLoad={() => window.setTimeout(onDone, 1500)} />;
+  if (failed) return <img className="live-paper-image" src={viewUrl(scene.file!)} alt="" onLoad={() => window.setTimeout(onDone, 1500)} onError={onDone} />;
   return <div className="live-paper" ref={paper} />;
 }
 
@@ -135,7 +135,8 @@ function SchematicScene({ scene, onAsk, onOpenFile, onDone }: { scene: Scene; on
       <SchematicView
         paths={[scene.file!]}
         revision={scene.id}
-        readFile={async (path) => (await api.readFile(path)).content}
+        // From the step itself where it can be: the file may be newer, or in a replay not in this project at all.
+        readFile={async (path) => (path === scene.file && scene.source !== undefined ? scene.source : (await api.readFile(path)).content)}
         onOpenFile={onOpenFile}
         onAsk={() => onAsk("")}
         onAskAbout={onAsk}
@@ -275,7 +276,7 @@ export function LiveView({
   } else if (scene.drawing === "page") {
     stage = <iframe className="live-page" key={scene.id} src={viewUrl(scene.file!)} title={scene.title} sandbox="allow-scripts" onLoad={() => window.setTimeout(done, 2500)} />;
   } else {
-    stage = <img className="live-paper-image" key={scene.id} src={viewUrl(scene.file!)} alt={scene.title} onLoad={() => window.setTimeout(done, 1800)} />;
+    stage = <img className="live-paper-image" key={scene.id} src={viewUrl(scene.file!)} alt={scene.title} onLoad={() => window.setTimeout(done, 1800)} onError={done} />;
   }
 
   const total = scenes.length;
