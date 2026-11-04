@@ -2,31 +2,39 @@
   <img src=".github/assets/rocketide-logo.svg" width="72" height="72" alt="RocketIDE logo">
 </p>
 
-<h1 align="center">RocketEDA UI</h1>
+<h1 align="center">RocketIDE workbench</h1>
 
 <p align="center"><sub>Part of <a href="https://github.com/Team-RocketEDA/RocketIDE"><b>RocketIDE</b></a> · the workbench</sub></p>
 
-RocketEDA UI is a React-based workbench for an AI-native chip-design IDE. It is designed for an Electron desktop application while keeping the frontend reusable for a future browser deployment.
+This is a React-based workbench for an AI-native chip-design IDE. It is designed for an Electron desktop application while keeping the frontend reusable for a future browser deployment.
 
 ## What it is now
 
 Everything on screen is real; there is no sample data.
 
-- **Start screen:** create a project from a template (two-stage op-amp on generic models, or empty) or open one.
-  Each project is its own git repository under `~/RocketEDA/projects` (override with `ROCKET_PROJECTS_DIR`).
+- **Home:** recent projects as cards with their pictures and last result, three guided lessons for beginners, and New
+  project, which asks what you want to build and names it for you. Each project is its own git repository under `~/RocketEDA/projects` (override with `ROCKET_PROJECTS_DIR`).
 - **Explorer and editor:** the project's real files. Saving commits to the project's git, so revisions are real.
   `results/` (engine evidence) and `ip/manifest.yaml` are read-only.
-- **Top bar:** project and git branch, revision, runner and agent status, Shortcuts (`?`), Export. Keys: `1`–`8`
+- **Top bar:** project and git branch, revision, runner and agent status, Shortcuts (`?`), Export. Keys: number keys for
   pages, `Ctrl+B` files, `Ctrl+J` run console, `Ctrl+I` assistant.
 - **Constraints:** a form over the project's `constraints.yaml` (PDK, domains, autonomy, repair limit, each check's
   target and required flag). Saving changes only those fields, keeps comments, and commits; the raw file is one click away.
+- **Live build:** when the assistant starts, the app draws what it's doing as one animated sequence: code line by line
+  with line numbers, green and red and running counts; diagrams and schematics mark by mark; checks landing on their
+  targets. It can be replayed afterwards. Everything is read from the assistant's real tool calls.
+- **Diagrams:** a block diagram read from the project's Verilog (`src/schematic/verilog.ts`), clicked through from the top
+  of the chip down, with the project's pictures and HTML pages beside it. Select blocks to ask the assistant about them.
 - **Verification:** every status comes from a Rocket Engine run recorded in `results/engine-runs/`, whether you
-  pressed Run checks or the assistant ran it. Runs on an older revision are marked stale. Required-gate progress,
-  filters, each metric across runs, and every run opens to its tool output and evidence file.
+  pressed Run checks or the assistant ran it. Runs on an older revision are marked stale. It shows how each verdict was
+  reached, each measurement on a bar against its target, trends across runs, which blocks a run has really tested, and
+  every run's tool output and evidence file.
 - **Engine toolbelt:** the tools Rocket Engine lists (`list_job_kinds`), each checked on this machine. `nG` runs the
   checks; another installed tool hands the assistant a request to review; a missing one says what it needs.
-- **Assistant:** the project's own agent (opencode + Rocket Fuel), started when the project opens. Chat with approval
-  cards (real diffs, the effect on the circuit), Activity (tool calls, approvals, checks, changed files), Settings.
+- **Assistant:** the project's own agent (opencode + Rocket Fuel), started when the project opens. It builds until done
+  by default, or asks first if the project says so. Attach a photo or PDF, or show it the view on screen. Learn mode and
+  Second opinion switch who answers. Activity lists tool calls, checks, changed files and every Meta Model API call. Add
+  your Meta API key here: it's kept in a private file and never comes back to the browser.
 - **Overview:** status, next actions read off the checks, recent commits and engine runs, the engine tool registry.
 - **Export:** project archive (`.tar.gz`) and a markdown verification report.
 - **Schematic:** drawn automatically from the project's SPICE netlists (`design/`, `tests/`): PMOS on top, NMOS
@@ -38,6 +46,7 @@ Everything on screen is real; there is no sample data.
 - **Plots:** the frequency response (gain and phase on one frequency axis) from the AC sweep the engine keeps
   with each run (`results/engine-runs/<run_id>-ac.raw`), with the targets from `constraints.yaml`, the 0 dB crossing
   and phase margin marked, a hover readout, and an earlier run overlaid for before/after.
+- **Find in layout:** SAM 3.1 marks what you name on the view.
 - **Layout:** the project's GDS files, read in the browser (`src/layout/gds.ts`), flattened from a top cell and drawn
   per layer, with layer toggles, cell choice, coordinates in µm, and Open in KLayout when it is installed.
 - **Terminal:** an engine console: Rocket Engine operations by name with JSON arguments, through the same
@@ -80,7 +89,7 @@ npm run serve         # http://localhost:5173; set ROCKET_UI_HOST and ROCKET_UI_
 | `ROCKET_ENGINE_HOME` | `../rocket-engine` | Rocket Engine checkout (simulations, evidence) |
 | `ROCKET_ENGINE_URL` | unset | a running engine shared with the agent and other clients (RocketIDE starts one); without it each check starts the engine for that call |
 | `ROCKET_PROJECTS_DIR` | `~/RocketEDA/projects` | where projects live |
-| `ROCKET_AGENT_URL` | unset | with `VITE_ROCKET_AGENT=replay`, stream a recording from rocket_fuel's `evals/replay_server.py` instead |
+| `ROCKET_AGENT_URL` | unset | stream a recording from rocket_fuel's `evals/replay_server.py` instead |
 
 The workspace server (`server/workspace.ts`) runs inside the Vite dev server: projects, files, git, checks through
 the engine, and the project's agent, proxied at `/agent` with its password added server-side, so no password or
@@ -103,11 +112,13 @@ Planned service boundaries:
 
 | Surface | Responsibility | Status |
 | --- | --- | --- |
-| Project picker | Create from a template or open a project | Real (workspace server) |
+| Home | Recent projects, new project from a sentence, lessons | Real (workspace server) |
+| Live build | The assistant's work as an animated sequence, replayable | Real, from its tool calls |
+| Diagrams | Block diagram from Verilog, the project's pictures and pages | Real, from its files |
 | Project explorer + editor | Browse and edit project files; saves are git commits | Real |
-| Assistant | Chat, approvals with diffs, tool activity, Stop | Real (project's Rocket Fuel agent) |
+| Assistant | Chat, attachments, Learn, Second opinion, tool activity, Stop | Real (project's Rocket Fuel agent) |
 | Constraints | Targets, measurement definitions, repair limit, autonomy | Real, form over `constraints.yaml` (saves are commits) |
-| Verification | Per-check status with measured value, margin and revision; run history | Real (Rocket Engine evidence) |
+| Verification | How each verdict was reached, target bars, trends, what's tested, run history | Real (Rocket Engine evidence) |
 | Run console | Logs of Run checks | Real (engine run log) |
 | Export | Project archive and verification report | Real |
 | Schematic viewer | Parts, nets, ports, sizes, subcircuits | Real, drawn from the project's netlists (`src/schematic/`, tests: `npm test`) |
