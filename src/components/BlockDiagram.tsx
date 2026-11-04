@@ -211,7 +211,6 @@ export function BlockDiagram({
           </button>
         </div>
       )}
-      {!instanceCount && <p className="muted block-diagram-leaf">This module has no blocks inside: it's built from logic directly.</p>}
     </section>
   );
 }

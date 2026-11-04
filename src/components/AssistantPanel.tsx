@@ -12,7 +12,7 @@ import { LastModelCall, ModelCallList, useModelCalls } from "./ModelCalls";
 import { ModelKeyForm, useModelKey } from "./ModelKey";
 
 const shortPath = (value: string) =>
-  value.replace(/^.*?\/((?:design|tests|ip|workflows|results)\/.*|[^/]+\.(?:yaml|yml|md|json))$/, "$1");
+  value.replace(/^.*?\/((?:design|tests|src|rtl|docs|scripts|ip|workflows|results)\/.*|[^/]+\.(?:yaml|yml|md|json))$/, "$1");
 
 // One quiet line per tool call: what it touched, and for simulations what the engine measured.
 function stepDetail(step: ToolStep): string {

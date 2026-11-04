@@ -94,6 +94,17 @@ test("can leave out clock and reset, which reach everything", () => {
   assert.ok(moduleDiagram(top, modules).nodes.some((node) => node.id === "port:clk"));
 });
 
+test("a module with nothing inside draws as one block between its ports", () => {
+  const modules = parseVerilog(LEAF);
+  const { nodes, edges } = moduleDiagram(modules[0], modules, { showClocks: false });
+  const block = nodes.find((node) => node.kind === "instance")!;
+  assert.equal(block.module, "adder");
+  assert.ok(edges.some((edge) => edge.from === "port:a" && edge.to === block.id));
+  assert.ok(edges.some((edge) => edge.from === block.id && edge.to === "port:sum"));
+  const layer = (id: string) => nodes.find((node) => node.id === id)!.layer;
+  assert.ok(layer("port:a") < block.layer && block.layer < layer("port:sum"));
+});
+
 test("a feedback loop doesn't hang it", () => {
   const source = `
     module cell(input a, output b); endmodule

@@ -287,16 +287,14 @@ export function LiveView({
         <b key={status} className="live-status">
           {status}
         </b>
-        {total > 0 && (
+        <span className="head-spacer" />
+        {/* While it's building nobody knows how many steps are left, so a total would only mislead. */}
+        {total > 0 && !busy && (
           <span className="live-progress" aria-hidden="true">
             <i style={{ width: `${(100 * reached) / total}%` }} />
           </span>
         )}
-        {total > 0 && (
-          <span className="muted live-count">
-            Step {reached} of {total}
-          </span>
-        )}
+        {total > 0 && <span className="muted live-count">{busy ? `Step ${reached}` : `Step ${reached} of ${total}`}</span>}
         {resting && total > 0 && !busy && (
           <button
             className="btn"

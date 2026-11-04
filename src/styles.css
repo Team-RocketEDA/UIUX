@@ -4032,6 +4032,9 @@ button.activity-row:hover {
   color: #a8a39c;
   cursor: pointer;
 }
+.block-diagram-head[hidden] {
+  display: none;
+}
 .block-diagram-head select {
   padding: 4px 7px;
   border: 1px solid var(--border-strong);
@@ -4245,8 +4248,8 @@ button.activity-row:hover {
 }
 .live-progress {
   position: relative;
-  flex: 1;
-  min-width: 40px;
+  flex: none;
+  width: 160px;
   height: 3px;
   overflow: hidden;
   border-radius: 2px;
