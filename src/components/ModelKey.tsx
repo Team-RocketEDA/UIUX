@@ -2,7 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, type ModelKeyStatus } from "../api";
 import { Icon } from "./icons";
 
-// Where the student brings their Meta Model API key. The server keeps it in a private file and restarts the agent with
+// Where you bring your Meta Model API key. The server keeps it in a private file and restarts the agent with
 // it. It never comes back to the browser, so this only ever shows whether there is one.
 export function useModelKey() {
   const [status, setStatus] = useState<ModelKeyStatus>();

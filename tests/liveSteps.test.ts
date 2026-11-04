@@ -18,6 +18,7 @@ test("sorts tools into what they do", () => {
 test("a file is shown relative to the project, and one outside it isn't shown", () => {
   assert.equal(stepFile(step("a", "write", { filePath: `${DIR}/src/a.v` }, 1), DIR), "src/a.v");
   assert.equal(stepFile(step("a", "write", { filePath: "./src/a.v" }, 1), DIR), "src/a.v");
+  assert.equal(stepFile(step("a", "write", { filePath: "/project/src/a.v" }, 1), DIR), "src/a.v");
   assert.equal(stepFile(step("a", "write", { filePath: "/etc/passwd" }, 1), DIR), undefined);
   assert.equal(stepFile(step("a", "write", { filePath: "../other/a.v" }, 1), DIR), undefined);
   assert.equal(stepFile(step("a", "engine_run_spice", { sources: ["design/a.cir"] }, 1), DIR), "design/a.cir");

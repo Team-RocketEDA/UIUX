@@ -1,4 +1,4 @@
-// The Meta Model API key the student brings. It's kept in a private file on this machine, outside every project, and
+// The Meta Model API key you bring. It's kept in a private file on this machine, outside every project, and
 // only the server reads it: the browser can save or remove a key but never gets one back.
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
@@ -21,7 +21,7 @@ export function savedKey(file: string): string {
   }
 }
 
-// A key saved in the app wins over .env, because it's the one the student chose last.
+// A key saved in the app wins over .env, because it's the one chosen last.
 export function currentKey(env: Env, file = credentialsFile(env)): string {
   return savedKey(file) || env.MODEL_API_KEY || "";
 }

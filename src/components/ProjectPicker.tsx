@@ -74,7 +74,7 @@ function NewProjectDialog({ templates, onClose, onCreated }: { templates: Templa
             if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit(event);
           }}
         />
-        <p className="muted">The assistant plans it and sets up the files, targets and tests. You approve each change, and real simulators check the result.</p>
+        <p className="muted">The assistant builds it all, the files, targets and tests, and you watch it take shape. Real tools check the result.</p>
         {error && <div className="agent-error">{error}</div>}
         <footer>
           {starters.map((item) => (
