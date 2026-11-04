@@ -335,15 +335,26 @@ kbd {
   color: var(--text-soft);
 }
 
+/* ---------- left navigation: labelled page list that collapses to an icon rail ---------- */
+
 .rail {
   display: flex;
-  flex: 0 0 56px;
+  flex: 0 0 200px;
   flex-direction: column;
-  align-items: center;
-  gap: 4px;
-  padding: 12px 0;
+  gap: 10px;
+  width: 200px;
+  min-height: 0;
+  padding: 12px 8px 10px;
   border-right: 1px solid var(--border);
   background: var(--bg);
+  overflow: hidden;
+  transition: flex-basis 0.18s ease, width 0.18s ease, padding 0.18s ease;
+}
+
+.rail.collapsed {
+  flex-basis: 56px;
+  width: 56px;
+  padding-inline: 9px;
 }
 
 .rail-logo {
@@ -358,42 +369,193 @@ kbd {
   font-weight: 700;
 }
 
-.rail-button {
-  position: relative;
-  display: grid;
-  width: 38px;
-  height: 38px;
-  place-items: center;
-  border-radius: 9px;
-  color: var(--muted);
+.nav-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
-.rail-button:hover {
+.nav-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.nav-heading {
+  padding: 0 10px 6px;
+  color: var(--muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.nav-item,
+.nav-collapse {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  height: 34px;
+  padding: 0 10px;
+  border-radius: var(--radius-sm);
+  color: var(--text-soft);
+  font: 500 13px var(--sans);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.nav-item:hover,
+.nav-collapse:hover {
   color: var(--text);
   background: var(--hover);
 }
 
-.rail-button.active {
+.nav-item:focus-visible,
+.nav-collapse:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.nav-item.active {
   color: var(--text);
   background: var(--raised);
 }
 
-.rail-badge {
+/* The current page gets an accent bar; toggled panels only the raised fill. */
+.nav-item[aria-current="page"]::before {
   position: absolute;
-  top: 4px;
-  right: 3px;
-  min-width: 15px;
-  padding: 0 4px;
-  border-radius: 8px;
-  color: #fff;
-  background: var(--red);
-  font-size: 9.5px;
-  font-weight: 600;
-  line-height: 15px;
+  top: 9px;
+  bottom: 9px;
+  left: 0;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+  content: "";
 }
 
-.rail-spacer {
+.nav-item[aria-current="page"] .nav-icon {
+  color: var(--accent);
+}
+
+.nav-icon {
+  position: relative;
+  display: grid;
+  flex: 0 0 18px;
+  place-items: center;
+}
+
+.nav-label {
   flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nav-key {
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--muted);
+  font: 10.5px var(--mono);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.nav-item:hover .nav-key,
+.nav-item:focus-visible .nav-key {
+  opacity: 1;
+}
+
+.nav-badge {
+  min-width: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  color: var(--red);
+  background: var(--red-soft);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 18px;
+  text-align: center;
+}
+
+.nav-dot {
+  position: absolute;
+  top: -3px;
+  right: -4px;
+  display: none;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--red);
+  box-shadow: 0 0 0 2px var(--bg);
+}
+
+.nav-footer {
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.nav-collapse {
+  height: 30px;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.nav-collapse svg {
+  flex: 0 0 18px;
+  transform: rotate(180deg);
+  transition: transform 0.18s ease;
+}
+
+.rail.collapsed .nav-collapse svg {
+  transform: none;
+}
+
+.rail.collapsed .nav-label,
+.rail.collapsed .nav-key,
+.rail.collapsed .nav-badge {
+  display: none;
+}
+
+.rail.collapsed .nav-dot {
+  display: block;
+}
+
+.rail.collapsed .nav-item,
+.rail.collapsed .nav-collapse {
+  justify-content: center;
+  height: 38px;
+  padding: 0;
+}
+
+/* Collapsed, a group heading becomes a thin divider. */
+.rail.collapsed .nav-heading {
+  height: 1px;
+  margin: 2px 8px 8px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--border);
+  color: transparent;
+}
+
+.rail.collapsed .nav-group:first-child .nav-heading {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail,
+  .nav-collapse svg,
+  .nav-key {
+    transition: none;
+  }
 }
 
 .explorer {
