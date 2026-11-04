@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { parseDocument } from "yaml";
 import { api, checkRows, formatNumber, targetText, timeAgo, type CheckRow, type Commit, type Constraints, type Evidence, type ProjectSummary } from "../api";
-import type { EngineToolEntry } from "./TopBar";
+import { toolNeeds, type EngineToolEntry } from "./TopBar";
 import type { SurfaceId } from "../types";
 import { downloadText } from "../utils";
 import { Icon, type IconName } from "./icons";
@@ -151,7 +151,7 @@ export function OverviewView({
       <div className="panel">
         <div className="panel-heading">
           <span className="eyebrow">Engine tool registry</span>
-          <small className="muted">Rocket Engine operations and whether this machine can run them</small>
+          <small className="muted">What Rocket Engine says it can run on this machine (get_capabilities)</small>
         </div>
         {!engineTools ? (
           <p className="panel-copy">Asking the engine…</p>
@@ -173,7 +173,9 @@ export function OverviewView({
                   <td className="mono">{tool.name}</td>
                   <td>{tool.domain}</td>
                   <td className="mono">{tool.operations.join(", ")}</td>
-                  <td>{tool.available ? <StatusPill status="ready" label="Ready" /> : <span className="muted">Needs {tool.needs}</span>}</td>
+                  <td title={tool.readiness.map((r) => `${r.operation}: ${r.readiness}${r.reason ? ` (${r.reason})` : ""}`).join("\n")}>
+                    {tool.available ? <StatusPill status="ready" label="Ready" /> : <span className="muted">{toolNeeds(tool) || "Not available"}</span>}
+                  </td>
                 </tr>
               ))}
             </tbody>

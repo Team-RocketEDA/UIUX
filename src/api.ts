@@ -12,8 +12,9 @@ export type WorkspaceStatus = {
   project: string | null;
 };
 
-export type EngineTool = { name: string; available: boolean; needs: string };
-export type JobKind = { operation: string; tools: EngineTool[] };
+// From the engine's get_capabilities (see server/capabilities.ts): its readiness and reasons, unchanged.
+export type EngineTool = { name: string; available: boolean; missing: string[]; remedy?: string };
+export type JobKind = { operation: string; readiness: string; reason?: string; tools: EngineTool[] };
 
 export type Template = { id: string; title: string; description: string };
 export type ProjectEntry = { name: string; title: string; description: string; modified: number };
@@ -86,7 +87,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<WorkspaceStatus>("GET", "/api/status"),
-  engineJobs: () => request<JobKind[]>("GET", "/api/engine/jobs"),
+  engineJobs: (refresh = false) => request<JobKind[]>("GET", `/api/engine/jobs${refresh ? "?refresh=1" : ""}`),
   templates: () => request<Template[]>("GET", "/api/templates"),
   projects: () => request<ProjectEntry[]>("GET", "/api/projects"),
   createProject: (name: string, template: string) => request<{ name: string }>("POST", "/api/projects", { name, template }),
