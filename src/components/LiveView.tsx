@@ -1,72 +1,223 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { SessionView, ToolStep } from "../agent/fuel";
-import { changedFiles, liveFocus, stepFile, stepKind, type LiveFocus } from "../agent/liveFocus";
-import { api, type FileEntry, type Evidence, type ProjectSummary } from "../api";
+import { highlight, lineDelay, scenesFromSteps, type DiffLine, type Scene } from "../agent/liveScenes";
+import { api, formatNumber, type ConstraintCheck, type Evidence, type FileEntry, type ProjectSummary } from "../api";
+import { parseVerilog } from "../schematic/verilog";
+import { gauge } from "../verification";
 import { BlockDiagram } from "./BlockDiagram";
 import { useVerilogModules, viewUrl } from "./DiagramsView";
+import { drawIn, safeSvg } from "./drawIn";
 import { Icon, type IconName } from "./icons";
 import { SchematicView } from "./SchematicView";
-import { StatusPill, SurfaceHeader } from "./ui";
 
-const VERILOG = /\.(v|sv)$/i;
-const NETLIST = /\.(cir|sp|spice|net|ckt)$/i;
-const PICTURE = /\.(png|jpe?g|webp|gif|svg)$/i;
-const PAGE = /\.html?$/i;
+const HOLD_MS = 900;
+const reduced = () => Boolean(window.matchMedia?.("(prefers-reduced-motion: reduce)").matches);
 
-const STEP_ICON: Record<string, IconName> = { edit: "code", run: "play", read: "file", other: "sparkles" };
-
-function FilePreview({ path, modified }: { path: string; modified?: number }) {
-  const [text, setText] = useState<string>();
-  useEffect(() => {
-    let cancelled = false;
-    api.readFile(path).then((file) => !cancelled && setText(file.content)).catch(() => !cancelled && setText(undefined));
-    return () => {
-      cancelled = true;
-    };
-  }, [path, modified]);
-  if (text === undefined) return <p className="muted live-empty">Waiting for {path}…</p>;
-  return <pre className="live-code">{text.length > 60000 ? `${text.slice(0, 60000)}\n…` : text}</pre>;
-}
-
-function RunResult({ run, onPlots }: { run?: Evidence; onPlots: () => void }) {
-  if (!run) return <p className="muted live-empty">The engine is running a check…</p>;
-  const verdict = run.verdict;
+function CodeLine({ line, language }: { line: DiffLine; language: Scene["language"] }) {
   return (
-    <div className="live-run">
-      <div className="live-run-head">
-        <b>Engine verdict</b>
-        <StatusPill status={verdict.status === "PASS" ? "passed" : verdict.status === "FAIL" ? "failed" : "skipped"} label={verdict.status} />
-        <button className="btn" onClick={onPlots}>
-          <Icon name="plot" size={13} />
-          Plots
-        </button>
-      </div>
-      {verdict.reason && <p className="muted">{verdict.reason}</p>}
-      <table>
-        <tbody>
-          {(verdict.measurements ?? []).map((measurement) => (
-            <tr key={measurement.name}>
-              <td className="mono">{measurement.name}</td>
-              <td className="mono">
-                {measurement.value ?? "-"} {measurement.unit}
-              </td>
-              <td>
-                <StatusPill status={measurement.status === "pass" ? "passed" : "failed"} label={measurement.status.toUpperCase()} />
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div className={`code-line ${line.kind}`}>
+      <span className="code-number">{line.kind === "remove" ? line.oldNumber : line.newNumber}</span>
+      <span className="code-mark">{line.kind === "add" ? "+" : line.kind === "remove" ? "−" : " "}</span>
+      <code>
+        {highlight(line.text, language ?? "plain").map((token, index) => (
+          <span key={index} className={`tok-${token.kind}`}>
+            {token.text}
+          </span>
+        ))}
+      </code>
     </div>
   );
 }
 
-// Watch the design take shape: whichever file the assistant just wrote, drawn as what it is rather than as text, next to
-// a timeline of what it did. Click parts of a drawing to point the assistant at them.
+// Lines arrive one by one, and the counters climb with them.
+function CodeScene({ scene, waiting, onDone }: { scene: Scene; waiting: number; onDone: () => void }) {
+  const lines = scene.lines ?? [];
+  const [shown, setShown] = useState(() => (reduced() ? lines.length : 0));
+  const box = useRef<HTMLDivElement>(null);
+  const delay = lineDelay(lines.length, waiting);
+  useEffect(() => {
+    if (shown >= lines.length) {
+      const timer = window.setTimeout(onDone, waiting ? HOLD_MS / 2 : HOLD_MS);
+      return () => window.clearTimeout(timer);
+    }
+    const timer = window.setTimeout(() => setShown((count) => count + 1), delay);
+    return () => window.clearTimeout(timer);
+  }, [shown, lines.length, delay]);
+  useLayoutEffect(() => {
+    const element = box.current;
+    if (element) element.scrollTop = element.scrollHeight;
+  }, [shown]);
+  const visible = lines.slice(0, shown);
+  return (
+    <div className="code-scene">
+      <header>
+        <span className="mono">{scene.file}</span>
+        <b className="count-add">+{visible.filter((line) => line.kind === "add").length}</b>
+        <b className="count-remove">−{visible.filter((line) => line.kind === "remove").length}</b>
+      </header>
+      <div className="code-body" ref={box}>
+        {visible.map((line, index) => (
+          <CodeLine key={index} line={line} language={scene.language} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Waits for the drawing to be in the page, however it gets there, then draws it.
+function useDrawing(box: React.RefObject<HTMLElement | null>, key: string, onDone: () => void, shapesFirst = false) {
+  useEffect(() => {
+    let timer: number | undefined;
+    let started = false;
+    const start = () => {
+      // The drawing, not an icon: icons are small.
+      const usable = [...(box.current?.querySelectorAll<SVGSVGElement>("svg") ?? [])].find((item) => item.getBoundingClientRect().width > 120 && item.querySelector("path, line, rect"));
+      if (started || !usable) return;
+      started = true;
+      observer.disconnect();
+      const took = drawIn(usable, { shapesFirst });
+      timer = window.setTimeout(onDone, took + HOLD_MS);
+    };
+    const observer = new MutationObserver(start);
+    if (box.current) observer.observe(box.current, { childList: true, subtree: true });
+    start();
+    // Nothing to draw after a while: move on, rather than hold up the rest.
+    const giveUp = window.setTimeout(() => {
+      if (!started) onDone();
+    }, 6000);
+    return () => {
+      observer.disconnect();
+      window.clearTimeout(timer);
+      window.clearTimeout(giveUp);
+    };
+  }, [key]);
+}
+
+function SvgDrawing({ scene, onDone }: { scene: Scene; onDone: () => void }) {
+  const paper = useRef<HTMLDivElement>(null);
+  const [failed, setFailed] = useState(false);
+  useLayoutEffect(() => {
+    const svg = scene.source ? safeSvg(scene.source) : undefined;
+    if (!svg) {
+      setFailed(true);
+      return;
+    }
+    paper.current?.replaceChildren(svg);
+  }, [scene.source]);
+  useDrawing(paper, scene.id, onDone);
+  if (failed) return <img className="live-paper-image" src={viewUrl(scene.file!)} alt="" onLoad={() => window.setTimeout(onDone, 1500)} />;
+  return <div className="live-paper" ref={paper} />;
+}
+
+function BlockScene({ scene, entries, onAsk, onDone }: { scene: Scene; entries: FileEntry[]; onAsk: (text: string) => void; onDone: () => void }) {
+  const loaded = useVerilogModules(entries);
+  // What was just written may not have reached the file list yet, so it's read from the step itself.
+  const modules = useMemo(() => {
+    const fresh = scene.source && scene.file ? parseVerilog(scene.source, scene.file) : [];
+    const names = new Set(fresh.map((module) => module.name));
+    return [...fresh, ...loaded.filter((module) => !names.has(module.name))];
+  }, [scene.source, scene.file, loaded]);
+  const start = scene.source && scene.file ? parseVerilog(scene.source, scene.file)[0]?.name : undefined;
+  const box = useRef<HTMLDivElement>(null);
+  useDrawing(box, scene.id, onDone, true);
+  return (
+    <div className="live-blocks" ref={box}>
+      <BlockDiagram bare modules={modules} startModule={start} onAsk={onAsk} />
+    </div>
+  );
+}
+
+function SchematicScene({ scene, onAsk, onOpenFile, onDone }: { scene: Scene; onAsk: (text: string) => void; onOpenFile: (path: string) => void; onDone: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useDrawing(box, scene.id, onDone);
+  return (
+    <div className="live-schematic" ref={box}>
+      <SchematicView
+        paths={[scene.file!]}
+        revision={scene.id}
+        readFile={async (path) => (await api.readFile(path)).content}
+        onOpenFile={onOpenFile}
+        onAsk={() => onAsk("")}
+        onAskAbout={onAsk}
+      />
+    </div>
+  );
+}
+
+function verdictOf(step?: ToolStep) {
+  if (!step?.output) return undefined;
+  try {
+    const result = JSON.parse(step.output);
+    return (result.verdict ?? result) as { status?: string; reason?: string; measurements?: { name: string; value: number | null; unit?: string; status: string }[] };
+  } catch {
+    return undefined;
+  }
+}
+
+// The check running, its measurements landing on their bars, then the verdict.
+function RunScene({ scene, step, checks, onDone, onPlots }: { scene: Scene; step?: ToolStep; checks: ConstraintCheck[]; onDone: () => void; onPlots: () => void }) {
+  const verdict = verdictOf(step);
+  const finished = step?.status === "completed" || step?.status === "error";
+  useEffect(() => {
+    if (!finished) return;
+    const timer = window.setTimeout(onDone, 2600);
+    return () => window.clearTimeout(timer);
+  }, [finished]);
+  const status = verdict?.status;
+  return (
+    <div className="run-scene">
+      <div className={`run-pulse ${finished ? "done" : ""}`}>
+        <span />
+      </div>
+      <h2>{finished ? "Measured by " : "Running in "}{scene.tool}</h2>
+      {!finished && <p className="muted">The simulator decides this, not the assistant.</p>}
+      <div className="run-bars">
+        {(verdict?.measurements ?? []).map((item) => {
+          const check = checks.find((candidate) => candidate.metric === item.name);
+          const bar = check && typeof item.value === "number" ? gauge(check, item.value) : undefined;
+          return (
+            <div className="run-bar" key={item.name}>
+              <div>
+                <b>{check?.title ?? item.name}</b>
+                <span className={item.status === "pass" ? "pass" : "fail"}>
+                  {formatNumber(item.value)} {item.unit ?? check?.unit ?? ""}
+                </span>
+              </div>
+              {bar && (
+                <div className="gauge-bar animate">
+                  <span className={`gauge-zone ${bar.passAbove ? "above" : "below"}`} style={bar.passAbove ? { left: `${bar.targetAt}%`, right: 0 } : { left: 0, width: `${bar.targetAt}%` }} />
+                  <span className="gauge-target" style={{ left: `${bar.targetAt}%` }} />
+                  <span className={`gauge-value ${item.status === "pass" ? "pass" : "fail"}`} style={{ left: `${bar.valueAt}%` }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      {status && (
+        <div className={`run-verdict ${status === "PASS" ? "pass" : status === "FAIL" ? "fail" : ""}`}>
+          <Icon name={status === "PASS" ? "check" : status === "FAIL" ? "x" : "warning"} size={18} />
+          {status.replace("_", " ")}
+        </div>
+      )}
+      {finished && verdict?.reason && <p className="muted run-reason">{verdict.reason}</p>}
+      {finished && (
+        <button className="btn" onClick={onPlots}>
+          <Icon name="plot" size={13} />
+          Open the plots
+        </button>
+      )}
+    </div>
+  );
+}
+
+const SCENE_ICON: Record<Scene["kind"], IconName> = { code: "code", drawing: "diagram", run: "play" };
+
+// The build as it happens, as one smooth sequence: code line by line, drawings mark by mark, checks measured. Work done
+// faster than it can be shown waits its turn and plays a little quicker. It's all replayable afterwards.
 export function LiveView({
   project,
   entries,
-  evidence,
   activity,
   onAsk,
   onOpenFile,
@@ -82,132 +233,103 @@ export function LiveView({
 }) {
   const steps = activity?.steps ?? [];
   const busy = activity?.status === "busy";
-  const [follow, setFollow] = useState(true);
-  const [pinned, setPinned] = useState<LiveFocus>({ kind: "none" });
-  const latest = useMemo(() => liveFocus(steps, project.dir), [steps, project.dir]);
-  const changed = useMemo(() => changedFiles(steps, project.dir), [steps, project.dir]);
-  const modules = useVerilogModules(entries);
-  const focus = follow ? latest : pinned;
-  const focusPath = focus.kind === "file" ? focus.path : undefined;
-  const modified = entries.find((entry) => entry.path === focusPath)?.modified;
+  const scenes = useMemo(() => scenesFromSteps(steps, project.dir), [steps, project.dir]);
+  // Earlier work isn't replayed by itself: playback starts from whatever comes next.
+  const [index, setIndex] = useState(scenes.length);
+  const [replaying, setReplaying] = useState(false);
 
-  // Blocks that weren't there when this page opened are new, and marked as such.
-  const known = useRef<Set<string> | null>(null);
+  const atEnd = index >= scenes.length;
+  // Finished: rest on the last drawing, or the last thing made.
+  const restingOn = useMemo(() => [...scenes].reverse().find((scene) => scene.kind === "drawing") ?? scenes[scenes.length - 1], [scenes]);
+  const scene = atEnd ? restingOn : scenes[index];
+  const waiting = Math.max(0, scenes.length - index - 1);
+  const stepOf = (item?: Scene) => steps.find((candidate) => candidate.id === item?.stepId);
+  const next = () => setIndex((current) => (current === index ? current + 1 : current));
   useEffect(() => {
-    if (!known.current && (modules.length || !entries.some((entry) => VERILOG.test(entry.path)))) {
-      known.current = new Set(modules.flatMap((module) => module.instances.map((instance) => `${module.name}/${instance.name}`)));
-    }
-  }, [modules, entries]);
-  const isNew = (module: string, instance: string) => Boolean(known.current) && !known.current!.has(`${module}/${instance}`);
+    if (atEnd) setReplaying(false);
+  }, [atEnd]);
+  const resting = atEnd;
+  const done = resting ? () => undefined : next;
 
-  const pick = (step: ToolStep) => {
-    const kind = stepKind(step);
-    const path = stepFile(step, project.dir);
-    setFollow(false);
-    if (kind === "run") setPinned({ kind: "run", stepId: step.id });
-    else if (path) setPinned({ kind: "file", path });
-  };
-
-  const timeline = [...steps].sort((a, b) => b.time - a.time).filter((step) => stepKind(step) !== "read");
-  const running = timeline.find((step) => step.status === "running" || step.status === "pending");
-  const fallbackNetlist = entries.find((entry) => NETLIST.test(entry.path) && entry.path.startsWith("design/"));
-  const moduleInFile = focusPath ? modules.find((module) => module.file === focusPath)?.name : undefined;
+  const status = !scenes.length ? (busy ? "Planning the build…" : "Ready when you are") : resting ? (busy ? "Thinking about the next step…" : "Finished") : (scene?.title ?? "");
 
   let stage;
-  if (focus.kind === "run") {
-    stage = <RunResult run={evidence[0]} onPlots={() => onNavigate("plots")} />;
-  } else if (focusPath && VERILOG.test(focusPath) && modules.length) {
-    stage = <BlockDiagram modules={modules} startModule={moduleInFile} changedFiles={changed} isNew={isNew} onAsk={onAsk} />;
-  } else if (focusPath && NETLIST.test(focusPath)) {
+  if (!scene) {
     stage = (
-      <div className="live-schematic">
-        <SchematicView
-          paths={[focusPath]}
-          revision={String(modified ?? "")}
-          readFile={async (path) => (await api.readFile(path)).content}
-          onOpenFile={onOpenFile}
-          onAsk={() => onAsk("")}
-          onAskAbout={onAsk}
-        />
+      <div className="live-idle">
+        <Icon name="pulse" size={30} />
+        <h2>{busy ? "Getting started" : "Nothing built yet"}</h2>
+        <p>{busy ? "The first step will appear here in a moment." : "Ask the assistant to build something, and watch it take shape here."}</p>
       </div>
     );
-  } else if (focusPath && PICTURE.test(focusPath)) {
-    stage = <img className="live-picture" src={`${viewUrl(focusPath)}?v=${modified ?? 0}`} alt={focusPath} />;
-  } else if (focusPath && PAGE.test(focusPath)) {
-    stage = <iframe className="live-page" key={`${focusPath}-${modified}`} src={viewUrl(focusPath)} title={focusPath} sandbox="allow-scripts" />;
-  } else if (focusPath) {
-    stage = <FilePreview path={focusPath} modified={modified} />;
-  } else if (modules.length) {
-    stage = <BlockDiagram modules={modules} changedFiles={changed} isNew={isNew} onAsk={onAsk} />;
-  } else if (fallbackNetlist) {
-    stage = (
-      <div className="live-schematic">
-        <SchematicView
-          paths={[fallbackNetlist.path]}
-          revision={String(fallbackNetlist.modified)}
-          readFile={async (path) => (await api.readFile(path)).content}
-          onOpenFile={onOpenFile}
-          onAsk={() => onAsk("")}
-          onAskAbout={onAsk}
-        />
-      </div>
-    );
+  } else if (scene.kind === "code") {
+    stage = <CodeScene key={scene.id} scene={scene} waiting={resting ? 0 : waiting} onDone={done} />;
+  } else if (scene.kind === "run") {
+    stage = <RunScene key={scene.id} scene={scene} step={stepOf(scene)} checks={project.constraints.checks ?? []} onDone={done} onPlots={() => onNavigate("plots")} />;
+  } else if (scene.drawing === "blocks") {
+    stage = <BlockScene key={scene.id} scene={scene} entries={entries} onAsk={onAsk} onDone={done} />;
+  } else if (scene.drawing === "schematic") {
+    stage = <SchematicScene key={scene.id} scene={scene} onAsk={onAsk} onOpenFile={onOpenFile} onDone={done} />;
+  } else if (scene.drawing === "svg") {
+    stage = <SvgDrawing key={scene.id} scene={scene} onDone={done} />;
+  } else if (scene.drawing === "page") {
+    stage = <iframe className="live-page" key={scene.id} src={viewUrl(scene.file!)} title={scene.title} sandbox="allow-scripts" onLoad={() => window.setTimeout(done, 2500)} />;
   } else {
-    stage = (
-      <div className="empty-state">
-        <Icon name="pulse" size={24} />
-        <b>Nothing built yet</b>
-        <span>Ask the assistant to build something. Each file it writes appears here, drawn as a diagram, schematic or picture.</span>
-      </div>
-    );
+    stage = <img className="live-paper-image" key={scene.id} src={viewUrl(scene.file!)} alt={scene.title} onLoad={() => window.setTimeout(done, 1800)} />;
   }
 
+  const total = scenes.length;
+  const reached = Math.min(index + 1, total);
   return (
-    <div className="page-surface live">
-      <SurfaceHeader
-        eyebrow={busy ? "The assistant is working" : "Project"}
-        title="Live build"
-        subtitle={running ? running.label : busy ? "Thinking about the next step…" : steps.length ? "Finished. Click any step to look at it again." : "What the assistant builds shows up here as it happens."}
-        actions={
-          <label className={`live-follow ${follow ? "on" : ""}`}>
-            <input type="checkbox" checked={follow} onChange={(event) => setFollow(event.target.checked)} />
-            Follow the assistant
-          </label>
-        }
-      />
-      <div className="live-grid">
-        <section className="live-stage" aria-label="What's being built">
-          {focusPath && (
-            <div className="live-stage-head">
-              {busy && <span className="live-dot" />}
-              <button onClick={() => onOpenFile(focusPath)} title="Open this file">
-                {focusPath}
-              </button>
-            </div>
-          )}
-          {stage}
-        </section>
-        <aside className="live-timeline" aria-label="What the assistant did">
-          <span className="eyebrow">
-            {changed.size} file{changed.size === 1 ? "" : "s"} changed · {timeline.filter((step) => stepKind(step) === "run").length} run{timeline.filter((step) => stepKind(step) === "run").length === 1 ? "" : "s"}
+    <div className="live">
+      <header className="live-bar">
+        <span className={`live-dot ${busy || !resting ? "on" : ""}`} />
+        <b key={status} className="live-status">
+          {status}
+        </b>
+        {total > 0 && (
+          <span className="live-progress" aria-hidden="true">
+            <i style={{ width: `${(100 * reached) / total}%` }} />
           </span>
-          {timeline.length === 0 && <p className="muted">No steps yet.</p>}
-          {timeline.map((step) => {
-            const path = stepFile(step, project.dir);
-            const active = (focus.kind === "run" && focus.stepId === step.id) || (focus.kind === "file" && path === focus.path);
-            return (
-              <button key={step.id} className={`live-step ${step.status} ${active ? "active" : ""}`} onClick={() => pick(step)}>
-                <Icon name={step.status === "error" ? "warning" : STEP_ICON[stepKind(step)]} size={13} />
-                <span>
-                  <b>{step.label}</b>
-                  {path && <small>{path}</small>}
-                  {step.error && <small className="live-step-error">{step.error.split("\n")[0].slice(0, 110)}</small>}
-                </span>
-              </button>
-            );
-          })}
-        </aside>
-      </div>
+        )}
+        {total > 0 && (
+          <span className="muted live-count">
+            Step {reached} of {total}
+          </span>
+        )}
+        {resting && total > 0 && !busy && (
+          <button
+            className="btn"
+            onClick={() => {
+              setReplaying(true);
+              setIndex(0);
+            }}
+          >
+            <Icon name="refresh" size={13} />
+            Replay the build
+          </button>
+        )}
+      </header>
+      <section className={`live-stage ${replaying ? "replaying" : ""}`} aria-label="What's being built">
+        <div className="live-scene" key={scene?.id ?? "idle"}>
+          {stage}
+        </div>
+      </section>
+      {total > 0 && (
+        <nav className="live-steps" aria-label="Steps of the build">
+          {scenes.map((item, at) => (
+            <button
+              key={item.id}
+              title={item.file ? `${item.title}: ${item.file}` : item.title}
+              className={`live-step ${item.kind} ${at === Math.min(index, total - 1) ? "active" : ""} ${at <= index ? "reached" : ""}`}
+              onClick={() => setIndex(at)}
+            >
+              <Icon name={SCENE_ICON[item.kind]} size={12} />
+              <span>{item.title.replace(/^Writing the |^Writing a |^Drawing the |^Setting the /, "").replace(/^Simulating with /, "")}</span>
+            </button>
+          ))}
+        </nav>
+      )}
     </div>
   );
 }

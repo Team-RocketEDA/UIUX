@@ -41,12 +41,15 @@ export function BlockDiagram({
   changedFiles,
   isNew,
   onAsk,
+  bare,
 }: {
   modules: VerilogModule[];
   startModule?: string;
   changedFiles?: Set<string>;
   isNew?: (module: string, instance: string) => boolean;
   onAsk?: (text: string) => void;
+  // Just the drawing, for the Live build page.
+  bare?: boolean;
 }) {
   const top = useMemo(() => topModule(modules), [modules]);
   const [path, setPath] = useState<string[]>([]);
@@ -83,7 +86,7 @@ export function BlockDiagram({
   }
   return (
     <section className="block-diagram" aria-label={`Block diagram of ${current.name}`}>
-      <div className="block-diagram-head">
+      <div className="block-diagram-head" hidden={bare}>
         <div className="block-diagram-crumbs">
           <button onClick={() => setPath([])} disabled={!path.length}>
             {top?.name}
@@ -119,7 +122,7 @@ export function BlockDiagram({
         </select>
       </div>
       <div className="block-diagram-canvas">
-        <svg style={{ minWidth: Math.round(layout.width * 0.6) }} width="100%" height={Math.max(Math.round(layout.height * 1.15), 260)} viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
+        <svg style={{ minWidth: Math.round(layout.width * 0.6) }} width="100%" height={bare ? "100%" : Math.max(Math.round(layout.height * 1.15), 260)} viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
           <g fill="none">
             {diagram.edges.map((edge) => {
               const from = layout.placed.get(edge.from);

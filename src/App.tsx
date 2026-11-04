@@ -37,7 +37,7 @@ const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
   export: { label: "Export", icon: "export" },
 };
 
-const fillViews = new Set<SurfaceId>(["schematic", "layout", "terminal"]);
+const fillViews = new Set<SurfaceId>(["schematic", "layout", "terminal", "live"]);
 const POLL_MS = 3000;
 
 const clamp = (value: number, min: number, max: number) =>
