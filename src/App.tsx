@@ -13,7 +13,7 @@ import { RunConsole } from "./components/RunConsole";
 import { Sidebar } from "./components/Sidebar";
 import { SourceSurface } from "./components/SourceSurface";
 import { ResizeHandle } from "./components/ui";
-import { describeOperations, engineTools, SHORTCUT_PAGES, ShortcutsDialog, TopBar, type EngineToolEntry } from "./components/TopBar";
+import { describeOperations, engineTools, toolNeeds, SHORTCUT_PAGES, ShortcutsDialog, TopBar, type EngineToolEntry } from "./components/TopBar";
 import { PlotsView } from "./components/PlotsView";
 import { EngineConsole } from "./components/EngineConsole";
 import { LayoutView } from "./components/LayoutView";
@@ -144,10 +144,36 @@ export function App() {
     return () => window.removeEventListener("hashchange", onHash);
   }, []);
 
+  // What the engine can run, asked again for each project opened (the server re-asks on open). A late answer
+  // for a project that is no longer open is dropped.
+  const toolsFor = useRef("");
   useEffect(() => {
-    if (!project || tools) return;
-    api.engineJobs().then((kinds) => setTools(engineTools(kinds))).catch(() => setTools([]));
+    if (!project) return;
+    const name = project.name;
+    toolsFor.current = name;
+    setTools(null);
+    api.engineJobs()
+      .then((kinds) => toolsFor.current === name && setTools(engineTools(kinds)))
+      .catch((err) => {
+        if (toolsFor.current !== name) return;
+        setTools([]);
+        notify(`Could not ask Rocket Engine what it can run: ${err instanceof Error ? err.message : String(err)}`);
+      });
   }, [project?.name]);
+
+  // Asks the engine again: from the Engine label, and quietly after each run, so a tool installed while the
+  // IDE is open shows up without a restart. The old answer stays on screen until the new one arrives.
+  const refreshTools = (quiet = false) => {
+    const name = project?.name ?? "";
+    if (!quiet) setTools(null);
+    api.engineJobs(true)
+      .then((kinds) => toolsFor.current === name && setTools(engineTools(kinds)))
+      .catch((err) => {
+        if (toolsFor.current !== name) return;
+        if (!quiet) setTools([]);
+        notify(`Could not ask Rocket Engine what it can run: ${err instanceof Error ? err.message : String(err)}`);
+      });
+  };
 
   // Keys: 1–8 pages, Ctrl+B files, Ctrl+J console, Ctrl+I assistant, ? this list, Esc closes it.
   useEffect(() => {
@@ -312,6 +338,7 @@ export function App() {
       notify(message);
     } finally {
       setRunning(false);
+      refreshTools(true);
     }
   };
 
@@ -320,7 +347,7 @@ export function App() {
   const runTool = (tool: EngineToolEntry) => {
     const what = describeOperations(tool.operations);
     if (!tool.available) {
-      notify(`${tool.name} isn't installed on this machine (needs ${tool.needs}), so Rocket Engine can't run ${what} with it.`);
+      notify(`Rocket Engine can't run ${what} with ${tool.name} here: ${toolNeeds(tool) || "it gave no reason"}.`);
     } else if (tool.name === "ngspice") {
       void runChecks();
     } else {
@@ -499,6 +526,7 @@ export function App() {
       agentStatus={agentStatus}
       onSwitchProject={() => void switchProject()}
       onRunTool={runTool}
+      onRefreshTools={() => refreshTools()}
       onShortcuts={() => setShortcutsOpen(true)}
       onExport={() => navigate("export")}
     />

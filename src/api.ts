@@ -14,8 +14,9 @@ export type WorkspaceStatus = {
 
 export type ModelKeyStatus = { configured: boolean; source: "saved" | "env" | null; verified?: boolean };
 
-export type EngineTool = { name: string; available: boolean; needs: string };
-export type JobKind = { operation: string; tools: EngineTool[] };
+// From the engine's get_capabilities (see server/capabilities.ts): its readiness and reasons, unchanged.
+export type EngineTool = { name: string; available: boolean; missing: string[]; remedy?: string };
+export type JobKind = { operation: string; readiness: string; reason?: string; tools: EngineTool[] };
 
 export type Template = { id: string; title: string; description: string };
 export type ProjectEntry = { name: string; title: string; description: string; modified: number };
@@ -91,7 +92,7 @@ export const api = {
   modelKey: () => request<ModelKeyStatus>("GET", "/api/model-key"),
   saveModelKey: (key: string) => request<ModelKeyStatus>("PUT", "/api/model-key", { key }),
   removeModelKey: () => request<ModelKeyStatus>("DELETE", "/api/model-key"),
-  engineJobs: () => request<JobKind[]>("GET", "/api/engine/jobs"),
+  engineJobs: (refresh = false) => request<JobKind[]>("GET", `/api/engine/jobs${refresh ? "?refresh=1" : ""}`),
   templates: () => request<Template[]>("GET", "/api/templates"),
   projects: () => request<ProjectEntry[]>("GET", "/api/projects"),
   createProject: (name: string, template: string) => request<{ name: string }>("POST", "/api/projects", { name, template }),
