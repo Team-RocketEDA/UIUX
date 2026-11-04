@@ -1,16 +1,97 @@
-import { Logo } from "./Logo";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { api, timeAgo, type ProjectEntry, type Template, type WorkspaceStatus } from "../api";
 import { Icon } from "./icons";
-import { StatusPill } from "./ui";
+import { Logo } from "./Logo";
 
-// Start screen: open an existing project or create one from a template.
-export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
+const RECENT = 6;
+
+function ProjectCard({ project, onOpen }: { project: ProjectEntry; onOpen: () => void }) {
+  const [hasPicture, setHasPicture] = useState(true);
+  return (
+    <button className="home-card" onClick={onOpen}>
+      <span className="home-card-picture">
+        {hasPicture ? (
+          <img src={`/api/projects/${encodeURIComponent(project.name)}/preview`} alt="" loading="lazy" onError={() => setHasPicture(false)} />
+        ) : (
+          <Icon name="layout" size={30} />
+        )}
+      </span>
+      <b>{project.title}</b>
+      <span className="home-card-text">{project.description}</span>
+      <small>Edited {timeAgo(new Date(project.modified).toISOString())}</small>
+    </button>
+  );
+}
+
+function NewProjectDialog({ templates, onClose, onCreated }: { templates: Template[]; onClose: () => void; onCreated: (name: string, firstRequest?: string) => void }) {
+  const [text, setText] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string>();
+  const starters = templates.filter((item) => !item.lesson);
+
+  const start = async (template: string, title: string, firstRequest?: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      const { name } = await api.createProjectFor(title, template);
+      onCreated(name, firstRequest);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+  const submit = (event: FormEvent) => {
+    event.preventDefault();
+    const wanted = text.trim();
+    if (wanted) void start("empty", wanted, `Build this as a complete project: ${wanted}`);
+  };
+
+  return (
+    <div className="home-dialog-backdrop" onClick={onClose}>
+      <form className="home-dialog" role="dialog" aria-modal="true" aria-label="New project" onSubmit={submit} onClick={(event) => event.stopPropagation()}>
+        <header>
+          <h2>What do you want to build?</h2>
+          <button type="button" className="ghost-icon" onClick={onClose} aria-label="Close">
+            <Icon name="close" size={16} />
+          </button>
+        </header>
+        <textarea
+          value={text}
+          onChange={(event) => setText(event.target.value)}
+          rows={3}
+          autoFocus
+          placeholder="An 8-bit counter with enable and reset, or a low-pass filter for audio…"
+          aria-label="What do you want to build?"
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) submit(event);
+          }}
+        />
+        <p className="muted">The assistant plans it and sets up the files, targets and tests. You approve each change, and real simulators check the result.</p>
+        {error && <div className="agent-error">{error}</div>}
+        <footer>
+          {starters.map((item) => (
+            <button type="button" key={item.id} className="secondary-button" disabled={busy} title={item.description} onClick={() => void start(item.id, item.title)}>
+              {item.id === "empty" ? "Start empty" : item.title}
+            </button>
+          ))}
+          <span className="head-spacer" />
+          <button className="primary-button" disabled={!text.trim() || busy}>
+            <Icon name="sparkles" size={13} />
+            {busy ? "Creating…" : "Create project"}
+          </button>
+        </footer>
+      </form>
+    </div>
+  );
+}
+
+// The first thing you see: your recent work, a way to start something new, and the lessons.
+export function ProjectPicker({ onOpen }: { onOpen: (name: string, firstRequest?: string) => void }) {
   const [status, setStatus] = useState<WorkspaceStatus | null>(null);
   const [templates, setTemplates] = useState<Template[]>([]);
   const [projects, setProjects] = useState<ProjectEntry[]>([]);
-  const [name, setName] = useState("");
-  const [template, setTemplate] = useState("opamp-engine");
+  const [creating, setCreating] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   const [error, setError] = useState<string>();
   const [busy, setBusy] = useState(false);
 
@@ -20,12 +101,13 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
         setStatus(s);
         setTemplates(t);
         setProjects(p);
-        if (t.length && !t.some((item) => item.id === "opamp-engine")) setTemplate(t[0].id);
       })
       .catch((err: Error) => setError(`Workspace server unreachable: ${err.message}`));
   }, []);
 
   const lessons = templates.filter((item) => item.lesson);
+  const lessonIds = new Set(lessons.map((item) => item.id));
+  const shown = showAll ? projects : projects.slice(0, RECENT);
 
   // A lesson is a project named after it. Coming back to one reopens your work rather than starting over.
   const startLesson = async (id: string) => {
@@ -40,124 +122,84 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
     }
   };
 
-  const create = async () => {
-    setBusy(true);
-    setError(undefined);
-    try {
-      const created = await api.createProject(name.trim(), template);
-      onOpen(created.name);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
-    }
-  };
+  const tools = status ? Object.entries(status.tools) : [];
+  const ready = tools.filter(([, found]) => found).length;
 
   return (
-    <main className="picker-shell">
-      <section className="picker">
-        <header className="picker-header">
-          <Logo size={44} animate="launch" title="RocketIDE" />
-          <div>
-            <h1>RocketIDE</h1>
-            <p>Set your constraints. Describe your chip. Watch it get designed, tested and improved.</p>
-          </div>
-        </header>
-
-        {error && <div className="agent-error">{error}</div>}
-
-        {lessons.length > 0 && (
-          <div className="panel picker-panel lesson-panel">
-            <div className="panel-heading">
-              <span className="eyebrow">New to chip design? Start here</span>
-              <small>No experience needed. A real simulator checks your work.</small>
-            </div>
-            <div className="lesson-list">
-              {lessons.map((item) => (
-                <button key={item.id} className="lesson-card" disabled={busy} onClick={() => void startLesson(item.id)}>
-                  <b>{item.title}</b>
-                  <span>{item.description}</span>
-                  <em>
-                    {projects.some((project) => project.name === item.id) ? "Continue" : "Start"}
-                    <Icon name="chevronRight" size={12} />
-                  </em>
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-
-        <div className="picker-grid">
-          <div className="panel picker-panel">
-            <div className="panel-heading">
-              <span className="eyebrow">New project</span>
-            </div>
-            <label className="field">
-              <span>Name</span>
-              <input
-                value={name}
-                placeholder="my-opamp"
-                autoFocus
-                onChange={(event) => setName(event.target.value.toLowerCase())}
-                onKeyDown={(event) => event.key === "Enter" && name.trim() && !busy && void create()}
-              />
-              <small>Lowercase letters, digits, - and _. The project becomes its own git repository.</small>
-            </label>
-            <div className="template-list" role="radiogroup" aria-label="Template">
-              {templates.filter((item) => !item.lesson).map((item) => (
-                <button
-                  key={item.id}
-                  role="radio"
-                  aria-checked={template === item.id}
-                  className={`template-option ${template === item.id ? "selected" : ""}`}
-                  onClick={() => setTemplate(item.id)}
-                >
-                  <b>{item.title}</b>
-                  <span>{item.description}</span>
-                </button>
-              ))}
-            </div>
-            <button className="primary-button" disabled={!name.trim() || busy} onClick={() => void create()}>
-              <Icon name="check" size={13} />
-              {busy ? "Creating…" : "Create and open"}
-            </button>
-          </div>
-
-          <div className="panel picker-panel">
-            <div className="panel-heading">
-              <span className="eyebrow">Open project</span>
-              <small>{status?.projectsDir}</small>
-            </div>
-            {projects.length === 0 ? (
-              <p className="picker-empty">No projects yet. Create one to start designing.</p>
-            ) : (
-              <div className="project-list">
-                {projects.map((project) => (
-                  <button key={project.name} className="project-row" onClick={() => onOpen(project.name)}>
-                    <Icon name="folder" size={14} />
-                    <div>
-                      <b>{project.name}</b>
-                      <span>{project.title} · edited {timeAgo(new Date(project.modified).toISOString())}</span>
-                    </div>
-                    <Icon name="chevronRight" size={13} />
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+    <main className="home">
+      <header className="home-head">
+        <Logo size={40} animate="launch" title="RocketIDE" />
+        <div>
+          <h1>RocketIDE</h1>
+          <p>Design chips with an AI agent beside you. Every result comes from a real tool.</p>
         </div>
+        <span className="head-spacer" />
+        <button className="primary-button home-new" onClick={() => setCreating(true)}>
+          <Icon name="plus" size={15} />
+          New project
+        </button>
+      </header>
 
-        {status && (
-          <footer className="picker-footer">
-            <span>Rocket Engine</span>
-            <StatusPill status={status.engineFound ? "ready" : "unavailable"} />
-            {Object.entries(status.tools).map(([tool, found]) => (
-              <span key={tool} className={`tool-chip ${found ? "found" : ""}`} title={found ? `${tool} is installed` : `${tool} is not on PATH`}>
-                {tool}
-              </span>
+      {error && <div className="agent-error">{error}</div>}
+
+      <section className="home-section">
+        <div className="home-section-head">
+          <h2>Recent projects</h2>
+          {projects.length > RECENT && <button onClick={() => setShowAll(!showAll)}>{showAll ? "Show fewer" : `Show all ${projects.length}`}</button>}
+        </div>
+        {projects.length === 0 ? (
+          <button className="home-empty" onClick={() => setCreating(true)}>
+            <Icon name="sparkles" size={20} />
+            <b>Nothing here yet</b>
+            <span>Describe what you want to build, or start a lesson below.</span>
+          </button>
+        ) : (
+          <div className="home-grid">
+            {shown.map((project) => (
+              <ProjectCard key={project.name} project={project} onOpen={() => onOpen(project.name)} />
             ))}
-          </footer>
+          </div>
         )}
       </section>
+
+      {lessons.length > 0 && (
+        <section className="home-section">
+          <div className="home-section-head">
+            <h2>New to chip design? Start here</h2>
+            <small>No experience needed. A real simulator checks your work.</small>
+          </div>
+          <div className="lesson-list">
+            {lessons.map((item) => (
+              <button key={item.id} className="lesson-card" disabled={busy} onClick={() => void startLesson(item.id)}>
+                <span className="lesson-icon">
+                  <Icon name="graduation" size={16} />
+                </span>
+                <b>{item.title}</b>
+                <span>{item.description}</span>
+                <em>
+                  {projects.some((project) => project.name === item.id && lessonIds.has(project.name)) ? "Continue" : "Start"}
+                  <Icon name="chevronRight" size={12} />
+                </em>
+              </button>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {status && (
+        <footer className="home-foot" title={tools.map(([tool, found]) => `${tool}: ${found ? "installed" : "not installed"}`).join("\n")}>
+          <span className={`model-dot ${status.engineFound ? "" : "failed"}`} />
+          {status.engineFound ? "Rocket Engine ready" : "Rocket Engine not found"} · {ready} of {tools.length} tools installed
+        </footer>
+      )}
+
+      {creating && (
+        <NewProjectDialog
+          templates={templates}
+          onClose={() => setCreating(false)}
+          onCreated={(name, firstRequest) => onOpen(name, firstRequest)}
+        />
+      )}
     </main>
   );
 }

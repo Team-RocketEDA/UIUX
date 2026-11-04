@@ -8,6 +8,7 @@ import type { ActiveView, Job, ProjectFile, SurfaceId } from "./types";
 import { ActivityBar } from "./components/ActivityBar";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { Icon, type IconName } from "./components/icons";
+import { DiagramsView } from "./components/DiagramsView";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RunConsole } from "./components/RunConsole";
 import { Sidebar } from "./components/Sidebar";
@@ -24,6 +25,7 @@ import { ChecksView, ConstraintsView, ExportView, OverviewView, verificationRepo
 const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
   overview: { label: "Overview", icon: "home" },
   schematic: { label: "Schematic", icon: "schematic" },
+  diagrams: { label: "Diagrams", icon: "diagram" },
   layout: { label: "Layout", icon: "layout" },
   constraints: { label: "Constraints", icon: "constraints" },
   verification: { label: "Verification", icon: "verification" },
@@ -218,10 +220,12 @@ export function App() {
     setView({ kind: "surface", id: "overview" });
   };
 
-  const openProject = async (name: string) => {
+  // A new project can open with its first request in the assistant's box, ready to review and send.
+  const openProject = async (name: string, firstRequest?: string) => {
     try {
       resetWorkspaceState();
       setProject(await api.openProject(name));
+      if (firstRequest) setDraft({ text: firstRequest, id: Date.now() });
     } catch (err) {
       notify(err instanceof Error ? err.message : String(err));
     }
@@ -411,7 +415,7 @@ export function App() {
       }
     };
   if (!checked) return <main className="picker-shell" />;
-  if (!project) return <ProjectPicker onOpen={(name) => void openProject(name)} />;
+  if (!project) return <ProjectPicker onOpen={(name, firstRequest) => void openProject(name, firstRequest)} />;
 
   const files = entries.map((entry) => toProjectFile(entry, contents[entry.path]));
   const activeFile = view.kind === "file" ? files.find((file) => file.path === view.path) : null;
@@ -495,6 +499,8 @@ export function App() {
           <ChecksView project={project} evidence={evidence} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport}
             onOpenFile={(path) => void openFile(path)} />
         );
+      case "diagrams":
+        return <DiagramsView entries={entries} onAsk={(text) => { openAssistant(); setDraft({ text, id: Date.now() }); }} />;
       case "layout":
         return (
           <LayoutView
