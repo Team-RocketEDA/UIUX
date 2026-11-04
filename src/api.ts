@@ -99,6 +99,8 @@ export const api = {
   templates: () => request<Template[]>("GET", "/api/templates"),
   projects: () => request<ProjectEntry[]>("GET", "/api/projects"),
   createProject: (name: string, template: string) => request<{ name: string }>("POST", "/api/projects", { name, template }),
+  // Named for you, from what it's for.
+  createProjectFor: (title: string, template: string) => request<{ name: string }>("POST", "/api/projects", { title, template }),
   openProject: (name: string) => request<ProjectSummary>("POST", `/api/projects/${encodeURIComponent(name)}/open`),
   closeProject: () => request<{ ok: true }>("POST", "/api/project/close"),
   project: () => request<ProjectSummary | null>("GET", "/api/project"),

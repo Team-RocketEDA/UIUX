@@ -13,6 +13,7 @@ import path from "node:path";
 import { checkKey, cleanKey, credentialsFile, currentKey, keyStatus, removeKey, saveKey } from "./modelKey";
 import { readModelCalls } from "./modelCalls";
 import { segment } from "./segment";
+import { previewFile, projectSlug, VIEW_TYPES } from "./visuals";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { FuelClient } from "../src/agent/fuel/client";
@@ -393,13 +394,26 @@ export function createWorkspace(options: WorkspaceOptions) {
         }
       }
       case "POST /api/projects": {
-        const { name, template } = await readBody(req);
+        const { name: requested, template, title } = await readBody(req);
+        // No name given: one from what the project is for, numbered if it's taken.
+        let name = requested;
+        if (!name && typeof title === "string" && title.trim()) {
+          const base = projectSlug(title);
+          name = base;
+          for (let n = 2; existsSync(path.join(projectsDir, name)); n++) name = `${base}-${n}`;
+        }
         if (!NAME_RE.test(name ?? "")) throw new HttpError(400, "Use lowercase letters, digits, - or _ (max 41 characters).");
         if (!TEMPLATES.includes(template)) throw new HttpError(400, `Unknown template: ${template}`);
         const dir = path.join(projectsDir, name);
         if (existsSync(dir)) throw new HttpError(409, `A project named ${name} already exists.`);
         cpSync(path.join(fuelHome, "examples", template), dir, { recursive: true });
-        await git(dir, "init", "-q");
+        if (typeof title === "string" && title.trim()) {
+          const file = path.join(dir, "constraints.yaml");
+          const short = title.trim().replace(/\s+/g, " ");
+          const heading = short.length > 60 ? `${short.slice(0, 57).trimEnd()}...` : short;
+          writeFileSync(file, readFileSync(file, "utf8").replace(/^title:.*$/m, `title: ${JSON.stringify(heading)}`).replace(/^description:.*$/m, `description: ${JSON.stringify(short)}`));
+        }
+        await git(dir, "init", "-q", "-b", "main");
         await git(dir, "add", "-A");
         await git(dir, "commit", "-q", "-m", `Create project from ${template}`);
         return json(res, 201, { name });
@@ -475,6 +489,28 @@ export function createWorkspace(options: WorkspaceOptions) {
         tar.stdout.pipe(res);
         return;
       }
+    }
+    const preview = route.match(/^GET \/api\/projects\/([^/]+)\/preview$/);
+    if (preview) {
+      const name = decodeURIComponent(preview[1]);
+      const dir = path.join(projectsDir, name);
+      const file = NAME_RE.test(name) && existsSync(dir) ? previewFile(dir) : undefined;
+      if (!file) throw new HttpError(404, "No picture in this project yet.");
+      res.writeHead(200, { "Content-Type": VIEW_TYPES[path.extname(file).toLowerCase()] ?? "application/octet-stream", "Cache-Control": "no-cache" });
+      res.end(readFileSync(path.join(dir, file)));
+      return;
+    }
+    // A project's pictures and HTML diagrams, by path, so an HTML page's relative links work. The sandbox header keeps
+    // a page away from the app: it runs with no origin, so it can't read this server's answers.
+    const viewed = route.match(/^GET \/api\/project\/view\/(.+)$/);
+    if (viewed) {
+      const rel = viewed[1].split("/").map(decodeURIComponent).join("/");
+      const type = VIEW_TYPES[path.extname(rel).toLowerCase()];
+      const full = insideProject(project().dir, rel);
+      if (!type || !existsSync(full)) throw new HttpError(404, `Can't show ${rel}.`);
+      res.writeHead(200, { "Content-Type": type, "Content-Security-Policy": "sandbox allow-scripts", "X-Content-Type-Options": "nosniff", "Cache-Control": "no-cache" });
+      res.end(readFileSync(full));
+      return;
     }
     const opened = route.match(/^POST \/api\/projects\/([^/]+)\/open$/);
     if (opened) {

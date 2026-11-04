@@ -318,7 +318,7 @@ export function SchematicView({
         <div className="empty-state">
           <Icon name="schematic" size={24} />
           <b>No netlist yet</b>
-          <span>A schematic appears here once design/ has a SPICE netlist (.cir, .sp or .spice).</span>
+          <span>A schematic appears here once design/ has a SPICE netlist (.cir, .sp or .spice). For Verilog, see the block diagram under Diagrams.</span>
           <button className="btn primary" onClick={onAsk}>
             <Icon name="sparkles" size={13} />
             Ask the assistant to design one

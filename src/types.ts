@@ -36,6 +36,7 @@ export type Job = {
 export type SurfaceId =
   | "overview"
   | "schematic"
+  | "diagrams"
   | "layout"
   | "constraints"
   | "verification"

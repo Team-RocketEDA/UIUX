@@ -1,3 +1,4 @@
+import { viewUrl, visualFiles } from "./DiagramsView";
 import { Fragment, useEffect, useState } from "react";
 import { parseDocument } from "yaml";
 import { api, checkRows, formatNumber, targetText, timeAgo, type CheckRow, type Commit, type Constraints, type Evidence, type ProjectSummary } from "../api";
@@ -55,6 +56,12 @@ export function OverviewView({
   engineTools: EngineToolEntry[] | null;
 }) {
   const rows = checkRows(project.constraints, evidence, project.revision);
+  const [pictures, setPictures] = useState<string[]>([]);
+  useEffect(() => {
+    api.files()
+      .then((files) => setPictures(visualFiles(files).map((file) => file.path).filter((file) => !/\.html?$/i.test(file)).slice(0, 3)))
+      .catch(() => setPictures([]));
+  }, [project.revision]);
   const [commits, setCommits] = useState<Commit[]>([]);
   useEffect(() => {
     api.history().then(setCommits).catch(() => setCommits([]));
@@ -83,6 +90,19 @@ export function OverviewView({
           </>
         }
       />
+      {pictures.length > 0 && (
+        <button className="overview-pictures" onClick={() => onNavigate("diagrams")} aria-label="Open diagrams">
+          {pictures.map((file) => (
+            <span key={file}>
+              <img src={viewUrl(file)} alt="" />
+            </span>
+          ))}
+          <em>
+            <Icon name="diagram" size={13} />
+            All diagrams
+          </em>
+        </button>
+      )}
       <div className="stat-grid">
         <div>
           <span className="eyebrow">Design status</span>
