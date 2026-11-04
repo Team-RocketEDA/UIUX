@@ -3896,6 +3896,11 @@ button.activity-row:hover {
   color: #a8a39c;
   font-size: 13px;
 }
+.lesson-card .lesson-icon {
+  flex: none;
+  align-self: flex-start;
+  color: #ee6a4c;
+}
 .lesson-icon {
   display: inline-grid;
   place-items: center;
