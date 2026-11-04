@@ -1,0 +1,128 @@
+{
+ "operations": {
+  "annotate": {
+   "readiness": "ready",
+   "reason": "Served by the Engine directly (no solver needed).",
+   "tools": {}
+  },
+  "cancel_job": {
+   "readiness": "unsupported",
+   "reason": "No solver registered: cancel_job.",
+   "tools": {}
+  },
+  "run_drc": {
+   "readiness": "blocked",
+   "reason": "No run_drc tool resolves on this machine.",
+   "missing": [
+    "klayout",
+    "magic"
+   ],
+   "remedy": "Install Magic from source per the rtimothyedwards docs (see docs/provision-plan.md); ambient installs are kept and version-asserted, never reinstalled. Install KLayout for batch DRC (see docs/provision-plan.md); the engine uses `klayout -b` batch only \u2014 GUI breakage never gates engine work.",
+   "tools": {
+    "magic": {
+     "available": false,
+     "capability": {
+      "operations": [
+       "run_drc"
+      ],
+      "tech": "scmos",
+      "tool": "magic"
+     },
+     "found": {},
+     "missing": [
+      "magic"
+     ],
+     "remedy": "Install Magic from source per the rtimothyedwards docs (see docs/provision-plan.md); ambient installs are kept and version-asserted, never reinstalled."
+    },
+    "klayout": {
+     "available": false,
+     "capability": {
+      "operations": [
+       "run_drc"
+      ],
+      "tool": "klayout",
+      "rules": [
+       "width",
+       "space"
+      ],
+      "decks": [
+       "lydrc"
+      ]
+     },
+     "found": {},
+     "missing": [
+      "klayout"
+     ],
+     "remedy": "Install KLayout for batch DRC (see docs/provision-plan.md); the engine uses `klayout -b` batch only \u2014 GUI breakage never gates engine work."
+    }
+   }
+  },
+  "run_optical": {
+   "readiness": "ready",
+   "tools": {
+    "sax": {
+     "available": true,
+     "capability": {
+      "operations": [
+       "run_optical"
+      ],
+      "tool": "sax"
+     },
+     "found": {
+      "sax": "0.18.2"
+     },
+     "missing": []
+    },
+    "circulax": {
+     "available": true,
+     "capability": {
+      "operations": [
+       "run_optical"
+      ],
+      "tool": "circulax"
+     },
+     "found": {
+      "circulax": "0.2.5"
+     },
+     "missing": []
+    }
+   }
+  },
+  "run_post_layout": {
+   "readiness": "ready",
+   "tools": {
+    "ngspice": {
+     "available": true,
+     "capability": {
+      "operations": [
+       "run_post_layout"
+      ],
+      "tool": "ngspice"
+     },
+     "found": {
+      "ngspice": "/usr/bin/ngspice"
+     },
+     "missing": []
+    }
+   }
+  },
+  "run_spice": {
+   "readiness": "ready",
+   "tools": {
+    "ngspice": {
+     "available": true,
+     "capability": {
+      "operations": [
+       "run_spice"
+      ],
+      "tool": "ngspice"
+     },
+     "found": {
+      "ngspice": "/usr/bin/ngspice"
+     },
+     "missing": []
+    }
+   }
+  }
+ }
+}

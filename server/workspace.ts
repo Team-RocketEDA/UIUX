@@ -14,6 +14,7 @@ import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { FuelClient } from "../src/agent/fuel/client";
 import { followAgentEdits } from "./agentEdits";
+import { capabilityKinds, type JobKind } from "./capabilities";
 
 const run = promisify(execFile);
 
@@ -32,19 +33,7 @@ const HIDDEN = new Set([".git", ".opencode", ".rocket", "node_modules"]);
 const READ_ONLY_TOP = new Set(["results", "exports"]);
 const READ_ONLY_FILES = new Set(["ip/manifest.yaml"]);
 const TOOLS = ["ngspice", "verilator", "iverilog", "yosys", "klayout", "magic", "netgen", "openroad"];
-// What each engine tool needs on this machine: a binary on PATH, or a module in the engine's Python.
-const ENGINE_TOOLS: Record<string, { binary?: string; module?: string }> = {
-  ngspice: { binary: "ngspice" },
-  klayout: { binary: "klayout" },
-  magic: { binary: "magic" },
-  netgen: { binary: "netgen" },
-  icarus: { binary: "iverilog" },
-  slang: { binary: "slang" },
-  sax: { module: "sax" },
-};
-
-export type EngineTool = { name: string; available: boolean; needs: string };
-export type JobKind = { operation: string; tools: EngineTool[] };
+export type { EngineTool, JobKind } from "./capabilities";
 
 class HttpError extends Error {
   constructor(readonly status: number, message: string) {
@@ -244,38 +233,28 @@ export function createWorkspace(options: WorkspaceOptions) {
     };
   }
 
-  // The engine's own job kinds (list_job_kinds), each tool marked by whether it can run here.
-  // Asking the engine takes seconds, so the answer is kept until the server restarts.
-  let jobKinds: Promise<JobKind[]> | undefined;
-  function engineJobKinds(): Promise<JobKind[]> {
-    jobKinds ??= (async () => {
-      if (!engineUrl && !existsSync(engineHome)) return [];
-      const engine = ["run", "--quiet", "--project", engineHome, "python"];
-      const listed = engineUrl
-        ? await engineRequest("/catalog/call", { operation: "list_job_kinds", arguments: {} })
-        : JSON.parse((await run("uv", [...engine, "-m", "rocket_engine.adapters.mcp.server", "--project", "catalog", "--call", "list_job_kinds", "--args", "{}"], { timeout: 60_000 })).stdout);
-      const kinds: { operation: string; tools: string[] }[] = listed.job_kinds ?? [];
-      const importable = (module: string) => engineUrl
-        ? engineRequest(`/modules/${encodeURIComponent(module)}`).then((body) => body.importable === true, () => false)
-        : run("uv", [...engine, "-c", `import ${module}`], { timeout: 60_000 }).then(() => true, () => false);
-      const checked = new Map<string, Promise<boolean>>();
-      const available = (tool: string) => {
-        const need = ENGINE_TOOLS[tool] ?? { binary: tool };
-        if (!checked.has(tool)) {
-          checked.set(tool, need.module ? importable(need.module) : which(need.binary!));
-        }
-        return checked.get(tool)!;
-      };
-      return Promise.all(kinds.map(async (kind) => ({
-        operation: kind.operation,
-        tools: await Promise.all(kind.tools.map(async (name) => {
-          const need = ENGINE_TOOLS[name] ?? { binary: name };
-          return { name, available: await available(name), needs: need.module ? `the ${need.module} Python package in the engine environment` : `${need.binary} on PATH` };
-        })),
-      })));
-    })();
-    jobKinds.catch(() => (jobKinds = undefined));
-    return jobKinds;
+  // What the engine can run here (get_capabilities), with its own readiness and reasons; the IDE never
+  // decides that itself. Asking takes several seconds, so each project's answer is kept until the project
+  // is opened again or the client asks with ?refresh, as it does after a run and from the Engine label.
+  const capabilities = new Map<string, Promise<JobKind[]>>();
+  function engineCapabilities(open: Open | null, refresh = false): Promise<JobKind[]> {
+    const key = open?.name ?? "";
+    if (refresh) capabilities.delete(key);
+    let answer = capabilities.get(key);
+    if (!answer) {
+      answer = (async () => {
+        if (!engineUrl && !existsSync(engineHome)) return [];
+        if (open) return capabilityKinds(await callEngine(open, "get_capabilities", {}));
+        return capabilityKinds(engineUrl
+          ? await engineRequest("/catalog/call", { operation: "get_capabilities", arguments: {} })
+          : JSON.parse((await run("uv", ["run", "--quiet", "--project", engineHome, "python", "-m", "rocket_engine.adapters.mcp.server",
+              "--project", "catalog", "--call", "get_capabilities", "--args", "{}"], { timeout: 120_000, maxBuffer: 16 * 1024 * 1024 })).stdout));
+      })();
+      const asked = answer;
+      asked.catch(() => { if (capabilities.get(key) === asked) capabilities.delete(key); });
+      capabilities.set(key, asked);
+    }
+    return answer;
   }
 
   async function runChecks(open: Open) {
@@ -337,9 +316,9 @@ export function createWorkspace(options: WorkspaceOptions) {
   }
 
   // Read-only engine queries, plus the run operations the engine itself lists.
-  const ENGINE_QUERIES = ["list_job_kinds", "get_check_results", "get_job_status", "get_logs"];
+  const ENGINE_QUERIES = ["get_capabilities", "list_job_kinds", "get_check_results", "get_job_status", "get_logs"];
   async function consoleOperations() {
-    return [...ENGINE_QUERIES, ...(await engineJobKinds().catch(() => [])).map((kind) => kind.operation)];
+    return [...ENGINE_QUERIES, ...(await engineCapabilities(current).catch(() => [])).map((kind) => kind.operation)];
   }
 
   async function routeApi(req: IncomingMessage, res: ServerResponse, url: URL) {
@@ -354,7 +333,7 @@ export function createWorkspace(options: WorkspaceOptions) {
         });
       }
       case "GET /api/engine/jobs":
-        return json(res, 200, await engineJobKinds());
+        return json(res, 200, await engineCapabilities(current, url.searchParams.has("refresh")));
       case "GET /api/templates":
         return json(res, 200, TEMPLATES.filter((id) => existsSync(path.join(fuelHome, "examples", id))).map((id) => {
           const c = readConstraints(path.join(fuelHome, "examples", id));
@@ -459,6 +438,7 @@ export function createWorkspace(options: WorkspaceOptions) {
       const dir = path.join(projectsDir, name);
       if (!NAME_RE.test(name) || !existsSync(path.join(dir, "constraints.yaml"))) throw new HttpError(404, `No project ${name}.`);
       stopAgent();
+      capabilities.delete(name);
       current = { name, dir };
       void startAgent(current);
       return json(res, 200, await summary(current));

@@ -24,15 +24,28 @@ const OPERATION: Record<string, string> = {
   run_optical: "optical circuit simulation",
 };
 
-export type EngineToolEntry = { name: string; available: boolean; needs: string; operations: string[]; domain: string };
+// A tool as the engine reports it (get_capabilities): whether it resolves here, what is missing and how to
+// get it, and the readiness the engine gives each operation it serves. Nothing here is decided by the IDE.
+export type EngineToolEntry = {
+  name: string;
+  available: boolean;
+  missing: string[];
+  remedy?: string;
+  operations: string[];
+  readiness: { operation: string; readiness: string; reason?: string }[];
+  domain: string;
+};
 
-// One entry per tool (magic serves both DRC and extraction), in domain order.
+// One entry per tool (magic serves both DRC and extraction), in domain order. A tool takes the domain of
+// the first operation it serves that has one, so ngspice is Analog even though post-layout sim lists first.
 export function engineTools(kinds: JobKind[]): EngineToolEntry[] {
   const byName = new Map<string, EngineToolEntry>();
   for (const kind of kinds) {
     for (const tool of kind.tools) {
-      const entry = byName.get(tool.name) ?? { ...tool, operations: [], domain: DOMAIN[kind.operation] ?? "Other" };
+      const entry = byName.get(tool.name) ?? { ...tool, operations: [], readiness: [], domain: "Other" };
       entry.operations.push(kind.operation);
+      entry.readiness.push({ operation: kind.operation, readiness: kind.readiness, reason: kind.reason });
+      if (entry.domain === "Other" && DOMAIN[kind.operation]) entry.domain = DOMAIN[kind.operation];
       byName.set(tool.name, entry);
     }
   }
@@ -40,6 +53,13 @@ export function engineTools(kinds: JobKind[]): EngineToolEntry[] {
 }
 
 export const describeOperations = (operations: string[]) => operations.map((op) => OPERATION[op] ?? op).join(" and ");
+
+// The engine's own words for why a tool can't run here: what it found missing, and its remedy.
+export const toolNeeds = (tool: EngineToolEntry) =>
+  [tool.missing.length ? `missing ${tool.missing.join(", ")}` : "", tool.remedy ?? ""].filter(Boolean).join(". ");
+
+const readinessLines = (tool: EngineToolEntry) =>
+  tool.readiness.map((r) => `${r.operation}: ${r.readiness}${r.reason ? ` (${r.reason})` : ""}`).join("\n");
 
 export function TopBar({
   projectName,
@@ -51,6 +71,7 @@ export function TopBar({
   agentStatus,
   onSwitchProject,
   onRunTool,
+  onRefreshTools,
   onShortcuts,
   onExport,
 }: {
@@ -63,6 +84,7 @@ export function TopBar({
   agentStatus: "connected" | "starting" | "offline";
   onSwitchProject: () => void;
   onRunTool: (tool: EngineToolEntry) => void;
+  onRefreshTools: () => void;
   onShortcuts: () => void;
   onExport: () => void;
 }) {
@@ -80,10 +102,15 @@ export function TopBar({
       </button>
 
       <div className="toolbelt" role="toolbar" aria-label="Engine tools">
-        <span className="toolbelt-label" title="Tools Rocket Engine can run (list_job_kinds), checked against this machine">
+        <button
+          className="toolbelt-label"
+          onClick={onRefreshTools}
+          disabled={!tools}
+          title="What Rocket Engine says it can run on this machine (get_capabilities). Click to ask it again, e.g. after installing a tool."
+        >
           Engine
-          <small>{tools ? `${tools.length - unavailable}/${tools.length} ready` : "…"}</small>
-        </span>
+          <small>{tools ? `${tools.length - unavailable}/${tools.length} ready` : "asking…"}</small>
+        </button>
         {DOMAINS.map((domain) => {
           const group = (tools ?? []).filter((tool) => tool.domain === domain);
           if (!group.length) return null;
@@ -91,16 +118,17 @@ export function TopBar({
             <span className="tool-group" key={domain} title={domain}>
               {group.map((tool) => {
                 const what = describeOperations(tool.operations);
-                const title = tool.available
+                const summary = tool.available
                   ? `${tool.name}: ${what}. ${tool.name === "ngspice" ? "Runs the checks in constraints.yaml." : "Asks the assistant to run it on this project."}`
-                  : `${tool.name}: ${what}. Not installed here (needs ${tool.needs}).`;
+                  : `${tool.name}: ${what}. Rocket Engine can't run it here: ${toolNeeds(tool) || "no reason given"}.`;
+                const title = `${summary}\n${readinessLines(tool)}`;
                 return (
                   <button
                     key={tool.name}
                     className={`tool-mark ${tool.available ? "" : "unavailable"}`}
                     onClick={() => onRunTool(tool)}
                     title={title}
-                    aria-label={title}
+                    aria-label={summary}
                   >
                     {MARK[tool.name] ?? tool.name.slice(0, 3)}
                   </button>
