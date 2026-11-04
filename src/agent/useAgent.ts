@@ -4,8 +4,9 @@ import { emptyView, FuelClient, reduce, type SessionView } from "./fuel";
 export type AgentMode = "live" | "replay";
 
 // The workspace server proxies /agent to the open project's agent and adds auth there, so no
-// password or key ever reaches the browser. VITE_ROCKET_AGENT=replay streams a recording instead.
-const mode: AgentMode = import.meta.env.VITE_ROCKET_AGENT === "replay" ? "replay" : "live";
+// password or key ever reaches the browser. A recorded session is recognised when it arrives: replay_server.py
+// starts its stream with a rocket.replay event (./run.sh replay), and VITE_ROCKET_AGENT=replay also forces it.
+const builtForReplay = import.meta.env.VITE_ROCKET_AGENT === "replay";
 const client = new FuelClient({ baseUrl: `${window.location.origin}/agent` });
 
 export type Agent = {
@@ -24,6 +25,8 @@ export function useAgent(): Agent {
   const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string>();
   const sessionRef = useRef<string | undefined>(undefined);
+  const replayRef = useRef(builtForReplay);
+  const mode: AgentMode = builtForReplay || view.replay ? "replay" : "live";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -37,6 +40,7 @@ export function useAgent(): Agent {
       client
         .subscribe((event) => {
           setError(undefined);
+          if (event.type === "rocket.replay") replayRef.current = true;
           setView((current) => reduce(current, event));
         }, controller.signal)
         .then(() => {
@@ -45,7 +49,7 @@ export function useAgent(): Agent {
           if (controller.signal.aborted) return;
           setConnected(false);
           // A replay ends when the recording does; a live stream should come back.
-          if (mode === "live") retry = window.setTimeout(connect, 2000);
+          if (!replayRef.current) retry = window.setTimeout(connect, 2000);
         })
         .catch((err: unknown) => {
           if (controller.signal.aborted) return;
@@ -58,7 +62,7 @@ export function useAgent(): Agent {
     };
     // Pick the project's latest conversation back up (page reload, reopening the project), then stream.
     const restore = async () => {
-      if (mode !== "live") return;
+      if (replayRef.current) return;
       try {
         const sessionId = await client.latestSession();
         if (!sessionId || controller.signal.aborted) return;
@@ -79,7 +83,7 @@ export function useAgent(): Agent {
   }, []);
 
   const send = useCallback(async (text: string, autonomy: "auto" | "approval") => {
-    if (mode !== "live") return;
+    if (replayRef.current) return;
     try {
       setError(undefined);
       if (!sessionRef.current) {
@@ -93,7 +97,7 @@ export function useAgent(): Agent {
   }, []);
 
   const answer = useCallback(async (approvalId: string, reply: "once" | "reject") => {
-    if (mode !== "live") return;
+    if (replayRef.current) return;
     try {
       await client.reply(approvalId, reply);
     } catch (err) {
@@ -102,7 +106,7 @@ export function useAgent(): Agent {
   }, []);
 
   const stop = useCallback(async () => {
-    if (mode === "live" && sessionRef.current) await client.abort(sessionRef.current);
+    if (!replayRef.current && sessionRef.current) await client.abort(sessionRef.current);
   }, []);
 
   return {
