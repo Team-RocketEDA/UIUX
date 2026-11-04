@@ -257,6 +257,7 @@ export function AssistantPanel({
   onClose,
   constraints,
   lesson,
+  onActivity,
   agentState,
   onOpenFile,
   onNavigate,
@@ -268,6 +269,7 @@ export function AssistantPanel({
   onClose: () => void;
   constraints: Constraints;
   lesson?: boolean;
+  onActivity?: (view: SessionView) => void;
   agentState: string;
   onOpenFile: (path: string) => void;
   onNavigate: (surface: SurfaceId) => void;
@@ -334,6 +336,9 @@ export function AssistantPanel({
 
   const approvals = view.approvals.filter((approval) => approval.status === "pending");
   const busy = view.status === "busy";
+  // The rest of the app follows the work, not every word of the reply.
+  const lastStep = view.steps[view.steps.length - 1];
+  useEffect(() => onActivity?.(view), [view.status, view.steps.length, lastStep?.status, lastStep?.id]);
   const limit = view.iteration?.limit ?? constraints.agent?.iteration_limit ?? 3;
   const used = view.iteration?.used ?? 0;
   const autonomy = constraints.agent?.mode === "auto" ? "Auto" : "Approval";

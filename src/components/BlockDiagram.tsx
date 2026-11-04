@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { moduleDiagram, topModule, type DiagramNode, type VerilogModule } from "../schematic/verilog";
 import { Icon } from "./icons";
 
@@ -33,12 +33,32 @@ function place(nodes: DiagramNode[]): { placed: Map<string, Placed>; width: numb
   return { placed, width: maxX + MARGIN, height };
 }
 
-// Drawn from the project's Verilog as it is now: modules, ports and the nets joining them. Click a block to go inside.
-export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
+// Drawn from the project's Verilog as it is now: modules, ports and the nets joining them. Click blocks to point the
+// assistant at them, and double-click one to go inside.
+export function BlockDiagram({
+  modules,
+  startModule,
+  changedFiles,
+  isNew,
+  onAsk,
+}: {
+  modules: VerilogModule[];
+  startModule?: string;
+  changedFiles?: Set<string>;
+  isNew?: (module: string, instance: string) => boolean;
+  onAsk?: (text: string) => void;
+}) {
   const top = useMemo(() => topModule(modules), [modules]);
   const [path, setPath] = useState<string[]>([]);
   const [hovered, setHovered] = useState<string>();
   const [showClocks, setShowClocks] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  // Live: go to the module the assistant just wrote.
+  useEffect(() => {
+    if (startModule) setPath(startModule === top?.name ? [] : [startModule]);
+  }, [startModule]);
+  useEffect(() => setSelected([]), [path.join("/")]);
+  const toggle = (id: string) => setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   const currentName = path[path.length - 1] ?? top?.name;
   const current = modules.find((module) => module.name === currentName) ?? top;
   const diagram = useMemo(() => (current ? moduleDiagram(current, modules, { showClocks }) : undefined), [current, modules, showClocks]);
@@ -99,7 +119,7 @@ export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
         </select>
       </div>
       <div className="block-diagram-canvas">
-        <svg style={{ minWidth: Math.round(layout.width * 0.72) }} width="100%" height={Math.round(layout.height * 1)} viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
+        <svg style={{ minWidth: Math.round(layout.width * 0.6) }} width="100%" height={Math.round(layout.height * 1)} viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
           <g fill="none">
             {diagram.edges.map((edge) => {
               const from = layout.placed.get(edge.from);
@@ -119,17 +139,21 @@ export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
               );
             })}
           </g>
-          {[...layout.placed.values()].map((node) =>
-            node.kind === "instance" ? (
+          {[...layout.placed.values()].map((node) => {
+            const definition = modules.find((module) => module.name === node.module);
+            const fresh = node.kind === "instance" && Boolean(isNew?.(current.name, node.label));
+            const changed = Boolean(definition && changedFiles?.has(definition.file));
+            return node.kind === "instance" ? (
               <g
                 key={node.id}
-                className={`block-node ${node.known ? "known" : ""} ${hovered === node.id ? "lit" : ""}`}
+                className={`block-node ${node.known ? "known" : ""} ${hovered === node.id ? "lit" : ""} ${selected.includes(node.id) ? "selected" : ""} ${fresh ? "new" : changed ? "changed" : ""}`}
                 onMouseEnter={() => setHovered(node.id)}
                 onMouseLeave={() => setHovered(undefined)}
-                onClick={() => node.known && node.module && setPath([...path, node.module])}
-                role={node.known ? "button" : undefined}
+                onClick={() => (onAsk ? toggle(node.id) : node.known && node.module && setPath([...path, node.module]))}
+                onDoubleClick={() => node.known && node.module && setPath([...path, node.module])}
+                role="button"
               >
-                <title>{node.known ? `${node.module}: open it` : `${node.module}: its source isn't in this project`}</title>
+                <title>{`${node.module}. ${onAsk ? "Click to select. " : ""}${node.known ? "Double-click to go inside." : "Its source isn't in this project."}`}</title>
                 <rect x={node.x} y={node.y} width={node.w} height={node.h} rx={7} />
                 <text x={node.x + 12} y={node.y + 24} className="block-module">
                   {(node.module ?? "").slice(0, 21)}
@@ -137,6 +161,11 @@ export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
                 <text x={node.x + 12} y={node.y + 42} className="block-name">
                   {node.label.slice(0, 24)}
                 </text>
+                {fresh && (
+                  <text x={node.x + node.w - 10} y={node.y + 42} textAnchor="end" className="block-tag">
+                    NEW
+                  </text>
+                )}
               </g>
             ) : (
               <g key={node.id} className={`block-port ${node.kind} ${hovered === node.id ? "lit" : ""}`} onMouseEnter={() => setHovered(node.id)} onMouseLeave={() => setHovered(undefined)}>
@@ -146,10 +175,39 @@ export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
                   {node.label.slice(0, 16)}
                 </text>
               </g>
-            ),
-          )}
+            );
+          })}
         </svg>
       </div>
+      {selected.length > 0 && onAsk && (
+        <div className="block-diagram-ask">
+          <span>
+            {selected.length} selected:{" "}
+            <b>
+              {selected
+                .map((id) => layout.placed.get(id)?.label)
+                .filter(Boolean)
+                .join(", ")}
+            </b>
+          </span>
+          <button
+            className="primary-button"
+            onClick={() => {
+              const named = selected.map((id) => {
+                const node = layout.placed.get(id);
+                return `${node?.label} (${node?.module})`;
+              });
+              onAsk(`In ${current.name}, about ${named.join(" and ")}: `);
+            }}
+          >
+            <Icon name="sparkles" size={13} />
+            Ask about {selected.length === 1 ? "this" : "these"}
+          </button>
+          <button className="secondary-button" onClick={() => setSelected([])}>
+            Clear
+          </button>
+        </div>
+      )}
       {!instanceCount && <p className="muted block-diagram-leaf">This module has no blocks inside: it's built from logic directly.</p>}
     </section>
   );

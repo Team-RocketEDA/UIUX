@@ -9,6 +9,8 @@ import { ActivityBar } from "./components/ActivityBar";
 import { AssistantPanel } from "./components/AssistantPanel";
 import { Icon, type IconName } from "./components/icons";
 import { DiagramsView } from "./components/DiagramsView";
+import { LiveView } from "./components/LiveView";
+import type { SessionView } from "./agent/fuel";
 import { ProjectPicker } from "./components/ProjectPicker";
 import { RunConsole } from "./components/RunConsole";
 import { Sidebar } from "./components/Sidebar";
@@ -24,6 +26,7 @@ import { ChecksView, ConstraintsView, ExportView, OverviewView, verificationRepo
 
 const surfaceMeta: Record<SurfaceId, { label: string; icon: IconName }> = {
   overview: { label: "Overview", icon: "home" },
+  live: { label: "Live build", icon: "pulse" },
   schematic: { label: "Schematic", icon: "schematic" },
   diagrams: { label: "Diagrams", icon: "diagram" },
   layout: { label: "Layout", icon: "layout" },
@@ -103,6 +106,8 @@ export function App() {
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // A request for the assistant prepared by a toolbelt button; the user reviews it before sending.
   const [draft, setDraft] = useState<{ text: string; id: number }>();
+  const [activity, setActivity] = useState<SessionView>();
+  const wasBusy = useRef(false);
 
   const [toast, setToast] = useState<string | null>(null);
   const viewRef = useRef<HTMLDivElement>(null);
@@ -237,6 +242,14 @@ export function App() {
     resetWorkspaceState();
     setProject(null);
   };
+
+  // When the assistant starts working, show what it's building rather than the project summary. Only from Overview: if
+  // you've gone somewhere else, you meant to.
+  useEffect(() => {
+    const busy = activity?.status === "busy";
+    if (busy && !wasBusy.current && view.kind === "surface" && view.id === "overview") navigate("live");
+    wasBusy.current = busy;
+  }, [activity?.status]);
 
   const navigate = (nextSurface: SurfaceId) => {
     setSurface(nextSurface);
@@ -472,6 +485,10 @@ export function App() {
             readFile={async (path) => (await api.readFile(path)).content}
             onOpenFile={(path) => void openFile(path)}
             onAsk={openAssistant}
+            onAskAbout={(text) => {
+              openAssistant();
+              setDraft({ text, id: Date.now() });
+            }}
             proposal={proposal}
           />
         );
@@ -498,6 +515,21 @@ export function App() {
         return (
           <ChecksView project={project} evidence={evidence} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport}
             onOpenFile={(path) => void openFile(path)} />
+        );
+      case "live":
+        return (
+          <LiveView
+            project={project}
+            entries={entries}
+            evidence={evidence}
+            activity={activity}
+            onAsk={(text) => {
+              openAssistant();
+              setDraft({ text, id: Date.now() });
+            }}
+            onOpenFile={(path) => void openFile(path)}
+            onNavigate={navigate}
+          />
         );
       case "diagrams":
         return <DiagramsView entries={entries} onAsk={(text) => { openAssistant(); setDraft({ text, id: Date.now() }); }} />;
@@ -652,6 +684,7 @@ export function App() {
             onClose={() => setAssistantOpen(false)}
             constraints={project.constraints}
             lesson={project.lesson}
+            onActivity={setActivity}
             agentState={project.agent.state}
             onOpenFile={(path) => void openFile(path)}
             onNavigate={navigate}

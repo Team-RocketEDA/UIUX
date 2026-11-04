@@ -358,7 +358,7 @@ export function createWorkspace(options: WorkspaceOptions) {
           .map((e) => {
             const dir = path.join(projectsDir, e.name);
             const c = readConstraints(dir);
-            return { name: e.name, title: c.title ?? e.name, description: c.description ?? "", modified: statSync(path.join(dir, "constraints.yaml")).mtimeMs };
+            return { name: e.name, title: c.title ?? e.name, description: c.description ?? "", checks: (c.checks ?? []).length, lastRun: readEvidence(dir)[0]?.verdict?.status, modified: statSync(path.join(dir, "constraints.yaml")).mtimeMs };
           })
           .sort((a, b) => b.modified - a.modified));
       case "GET /api/model-calls":
