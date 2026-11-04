@@ -48,6 +48,25 @@ function toProjectFile(entry: FileEntry, content = ""): ProjectFile {
   return { path: entry.path, kind, language: LANGUAGES[extension] ?? "Text", content, readOnly: entry.readOnly };
 }
 
+const FILES_OPEN_KEY = "rocketide.files.open";
+
+function readFlag(key: string, fallback: boolean): boolean {
+  try {
+    const value = localStorage.getItem(key);
+    return value === null ? fallback : value === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+function saveFlag(key: string, value: boolean) {
+  try {
+    localStorage.setItem(key, value ? "1" : "0");
+  } catch {
+    // Storage blocked: the choice lasts until reload.
+  }
+}
+
 export function App() {
   const [status, setStatus] = useState<WorkspaceStatus | null>(null);
   const [project, setProject] = useState<ProjectSummary | null>(null);
@@ -63,7 +82,9 @@ export function App() {
   const [openFiles, setOpenFiles] = useState<string[]>([]);
   const [dirtyFiles, setDirtyFiles] = useState<Set<string>>(new Set());
 
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  // The file tree starts hidden; Files in the navigation (or Ctrl+B) brings it back, and the choice is remembered.
+  const [sidebarOpen, setSidebarOpen] = useState(() => readFlag(FILES_OPEN_KEY, false));
+  useEffect(() => saveFlag(FILES_OPEN_KEY, sidebarOpen), [sidebarOpen]);
   const [sidebarWidth, setSidebarWidth] = useState(232);
   const [assistantOpen, setAssistantOpen] = useState(true);
   const [assistantWidth, setAssistantWidth] = useState(400);
@@ -491,6 +512,9 @@ export function App() {
         onToggleAssistant={() => setAssistantOpen((open) => !open)}
         onSwitchProject={() => void switchProject()}
         issues={issues}
+        checksRunning={running}
+        plotRuns={evidence.filter((run) => run.datasets?.length).length}
+        agentState={project.agent.state}
       />
 
       {sidebarOpen && (
