@@ -17,7 +17,9 @@ import { followAgentEdits } from "./agentEdits";
 
 const run = promisify(execFile);
 
-export type WorkspaceOptions = { fuelHome: string; engineHome: string; projectsDir: string; agentUrl?: string };
+// engineUrl: a running engine that every client shares (RocketIDE's scripts/engine-host.py). Without it each
+// engine call starts the engine's MCP server for that one call.
+export type WorkspaceOptions = { fuelHome: string; engineHome: string; projectsDir: string; agentUrl?: string; engineUrl?: string };
 
 // edits ends the commit-per-edit follower (agentEdits.ts) when the agent stops.
 type Agent = { port: number; password: string; proc: ChildProcess; state: "starting" | "ready" | "error"; error?: string; edits: AbortController };
@@ -159,6 +161,7 @@ export function createWorkspace(options: WorkspaceOptions) {
   const fuelHome = path.resolve(options.fuelHome);
   const engineHome = path.resolve(options.engineHome);
   const projectsDir = path.resolve(options.projectsDir);
+  const engineUrl = options.engineUrl?.replace(/\/+$/, "");
   mkdirSync(projectsDir, { recursive: true });
   let current: Open | null = null;
 
@@ -246,17 +249,20 @@ export function createWorkspace(options: WorkspaceOptions) {
   let jobKinds: Promise<JobKind[]> | undefined;
   function engineJobKinds(): Promise<JobKind[]> {
     jobKinds ??= (async () => {
-      if (!existsSync(engineHome)) return [];
+      if (!engineUrl && !existsSync(engineHome)) return [];
       const engine = ["run", "--quiet", "--project", engineHome, "python"];
-      const { stdout } = await run("uv", [...engine, "-m", "rocket_engine.adapters.mcp.server", "--project", "catalog", "--call", "list_job_kinds", "--args", "{}"], { timeout: 60_000 });
-      const kinds: { operation: string; tools: string[] }[] = JSON.parse(stdout).job_kinds ?? [];
+      const listed = engineUrl
+        ? await engineRequest("/catalog/call", { operation: "list_job_kinds", arguments: {} })
+        : JSON.parse((await run("uv", [...engine, "-m", "rocket_engine.adapters.mcp.server", "--project", "catalog", "--call", "list_job_kinds", "--args", "{}"], { timeout: 60_000 })).stdout);
+      const kinds: { operation: string; tools: string[] }[] = listed.job_kinds ?? [];
+      const importable = (module: string) => engineUrl
+        ? engineRequest(`/modules/${encodeURIComponent(module)}`).then((body) => body.importable === true, () => false)
+        : run("uv", [...engine, "-c", `import ${module}`], { timeout: 60_000 }).then(() => true, () => false);
       const checked = new Map<string, Promise<boolean>>();
       const available = (tool: string) => {
         const need = ENGINE_TOOLS[tool] ?? { binary: tool };
         if (!checked.has(tool)) {
-          checked.set(tool, need.module
-            ? run("uv", [...engine, "-c", `import ${need.module}`], { timeout: 60_000 }).then(() => true, () => false)
-            : which(need.binary!));
+          checked.set(tool, need.module ? importable(need.module) : which(need.binary!));
         }
         return checked.get(tool)!;
       };
@@ -292,8 +298,28 @@ export function createWorkspace(options: WorkspaceOptions) {
     return callEngine(open, operation, args);
   }
 
-  // One engine operation through the project-bound MCP server (validation, two-phase runs, evidence).
+  // A request to the shared engine. Its answers are JSON, including a refused call (HTTP 422).
+  async function engineRequest(route: string, body?: unknown): Promise<any> {
+    let response: Response;
+    try {
+      response = await fetch(`${engineUrl}${route}`, body === undefined ? {} : {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(300_000),
+      });
+    } catch (error: any) {
+      throw new HttpError(503, `Rocket Engine is not answering at ${engineUrl}: ${error?.message ?? error}`);
+    }
+    const text = await response.text();
+    if (text.startsWith("{")) return JSON.parse(text);
+    throw new HttpError(502, `Rocket Engine answered ${response.status}: ${text.slice(0, 300)}`);
+  }
+
+  // One engine operation through the project-bound MCP handlers (validation, two-phase runs, evidence): on the
+  // shared engine when there is one, otherwise a one-off engine for this call.
   async function callEngine(open: Open, operation: string, args: Record<string, unknown>) {
+    if (engineUrl) return engineRequest(`/projects/${encodeURIComponent(open.name)}/call`, { operation, arguments: args });
     if (!existsSync(engineHome)) throw new HttpError(503, `Rocket Engine not found at ${engineHome} (set ROCKET_ENGINE_HOME).`);
     try {
       const { stdout } = await run(
@@ -490,5 +516,6 @@ export function defaultOptions(env: Record<string, string | undefined>, cwd: str
     projectsDir: env.ROCKET_PROJECTS_DIR || path.join(os.homedir(), "RocketEDA", "projects"),
     // Replay: stream a recording (rocket_fuel evals/replay_server.py) instead of the project's agent.
     agentUrl: env.ROCKET_AGENT_URL || undefined,
+    engineUrl: env.ROCKET_ENGINE_URL || undefined,
   };
 }
