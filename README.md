@@ -1,4 +1,10 @@
-# RocketEDA UI
+<p align="center">
+  <img src=".github/assets/rocketide-logo.svg" width="72" height="72" alt="RocketIDE logo">
+</p>
+
+<h1 align="center">RocketEDA UI</h1>
+
+<p align="center"><sub>Part of <a href="https://github.com/Team-RocketEDA/RocketIDE"><b>RocketIDE</b></a> · the workbench</sub></p>
 
 RocketEDA UI is a React-based workbench for an AI-native chip-design IDE. It is designed for an Electron desktop application while keeping the frontend reusable for a future browser deployment.
 
