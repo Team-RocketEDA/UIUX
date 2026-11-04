@@ -8,6 +8,7 @@ import { applyUnifiedDiff, describeChanges, type CircuitChange, type Proposal } 
 import { useAgent } from "../agent/useAgent";
 import type { SurfaceId } from "../types";
 import { Icon, type IconName } from "./icons";
+import { ModelKeyForm, useModelKey } from "./ModelKey";
 
 const shortPath = (value: string) =>
   value.replace(/^.*?\/((?:design|tests|ip|workflows|results)\/.*|[^/]+\.(?:yaml|yml|md|json))$/, "$1");
@@ -211,9 +212,8 @@ function SettingsView({ rows, onEditConstraints, onEvidence }: { rows: [string, 
         </button>
       </div>
       <p className="assistant-hint">
-        Autonomy and the repair limit live in constraints.yaml (agent.mode, agent.iteration_limit). The model and its key are set where
-        the agent runs (rocket_fuel/.env), never in this page.
-      </p>
+        Autonomy and the repair limit live in constraints.yaml (agent.mode, agent.iteration_limit).
+        </p>
     </div>
   );
 }
@@ -271,6 +271,7 @@ export function AssistantPanel({
   const [input, setInput] = useState("");
   const [tab, setTab] = useState<"chat" | "activity" | "settings">("chat");
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const modelKey = useModelKey();
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Attachment[]>([]);
   const [notice, setNotice] = useState<string>();
@@ -375,6 +376,11 @@ export function AssistantPanel({
       </div>
 
       {tab === "activity" && <ActivityView view={view} onOpenFile={onOpenFile} onShowChat={() => setTab("chat")} />}
+      {tab === "settings" && !replay && (
+        <div className="assistant-key">
+          <ModelKeyForm status={modelKey.status} onChange={modelKey.setStatus} />
+        </div>
+      )}
       {tab === "settings" && (
         <SettingsView
           rows={[
@@ -395,12 +401,13 @@ export function AssistantPanel({
             Replay of a recorded session{view.replay?.recordedAt ? ` from ${new Date(view.replay.recordedAt).toLocaleString()}` : ""}. Nothing here is running now.
           </div>
         )}
+        {!replay && modelKey.status && !modelKey.status.configured && <ModelKeyForm status={modelKey.status} onChange={modelKey.setStatus} />}
         {error && <div className="notice error">{error}</div>}
         {view.retry && !replay && (
           <div className="notice warn">
             The model isn't answering: {view.retry.message}.{" "}
             {view.retry.next ? `Next try ${retryTime(view.retry.next)}. ` : ""}
-            Stop, or switch the model in rocket_fuel/.env and reopen the project.
+            Stop, or check your key under Settings.
           </div>
         )}
         {!replay && agentState === "error" && <div className="notice error">The assistant failed to start for this project.</div>}

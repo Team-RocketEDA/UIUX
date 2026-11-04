@@ -51,7 +51,7 @@ test("sends the prompt and picture to sam-3.1 with the key", async () => {
 });
 
 test("no key says what to do", async () => {
-  await assert.rejects(segment("data:image/png;base64,AAAA", "x", {}), /MODEL_API_KEY/);
+  await assert.rejects(segment("data:image/png;base64,AAAA", "x", {}), /Meta API key/);
 });
 
 test("an API error carries its message", async () => {

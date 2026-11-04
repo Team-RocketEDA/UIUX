@@ -10,6 +10,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { checkKey, cleanKey, credentialsFile, currentKey, keyStatus, removeKey, saveKey } from "./modelKey";
 import { segment } from "./segment";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
@@ -183,10 +184,17 @@ export function createWorkspace(options: WorkspaceOptions) {
     if (current) current.agent = undefined;
   }
 
+  // opencode reads the key when it starts.
+  function restartAgent() {
+    if (!current) return;
+    stopAgent();
+    void startAgent(current);
+  }
+
   async function startAgent(open: Open) {
     const port = await freePort();
     const password = randomBytes(18).toString("base64url");
-    const env: NodeJS.ProcessEnv = { ...process.env, OPENCODE_SERVER_PASSWORD: password };
+    const env: NodeJS.ProcessEnv = { ...process.env, OPENCODE_SERVER_PASSWORD: password, MODEL_API_KEY: currentKey(process.env) };
     if (existsSync(engineHome)) env.ROCKET_ENGINE_HOME = engineHome;
     const proc = spawn(path.join(fuelHome, "scripts", "dev.sh"), [open.dir, "serve", "--port", String(port), "--hostname", "127.0.0.1"], {
       env,
@@ -370,13 +378,32 @@ export function createWorkspace(options: WorkspaceOptions) {
             return { name: e.name, title: c.title ?? e.name, description: c.description ?? "", modified: statSync(path.join(dir, "constraints.yaml")).mtimeMs };
           })
           .sort((a, b) => b.modified - a.modified));
+      case "GET /api/model-key":
+        return json(res, 200, keyStatus(process.env));
+      case "PUT /api/model-key": {
+        let key: string;
+        let verified: boolean;
+        try {
+          key = cleanKey((await readBody(req)).key);
+          ({ verified } = await checkKey(key, process.env));
+        } catch (error: any) {
+          throw new HttpError(400, error?.message ?? String(error));
+        }
+        saveKey(credentialsFile(process.env), key);
+        restartAgent();
+        return json(res, 200, { ...keyStatus(process.env), verified });
+      }
+      case "DELETE /api/model-key":
+        removeKey(credentialsFile(process.env));
+        restartAgent();
+        return json(res, 200, keyStatus(process.env));
       case "POST /api/segment": {
         const { image, prompt } = await readBody(req);
         if (typeof image !== "string" || !image.startsWith("data:image/") || typeof prompt !== "string" || !prompt.trim()) {
           throw new HttpError(400, "Send a picture and what to find in it.");
         }
         try {
-          return json(res, 200, await segment(image, prompt, process.env));
+          return json(res, 200, await segment(image, prompt, { ...process.env, MODEL_API_KEY: currentKey(process.env) }));
         } catch (error: any) {
           throw new HttpError(502, error?.message ?? String(error));
         }
@@ -493,8 +520,14 @@ export function createWorkspace(options: WorkspaceOptions) {
       (response) => {
         res.writeHead(response.statusCode ?? 502, response.headers);
         response.pipe(res);
+        // pipe() only ends on a clean finish. When the agent stops (a new key, another project), the browser's event
+        // stream must end too, or it waits forever on a dead connection and never reconnects.
+        response.on("close", () => {
+          if (!res.writableEnded) res.end();
+        });
       },
     );
+    res.on("close", () => upstream.destroy());
     upstream.on("error", (error) => {
       if (!res.headersSent) json(res, 502, { error: "agent_unreachable", message: error.message });
       else res.end();

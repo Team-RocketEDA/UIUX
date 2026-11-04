@@ -12,6 +12,8 @@ export type WorkspaceStatus = {
   project: string | null;
 };
 
+export type ModelKeyStatus = { configured: boolean; source: "saved" | "env" | null; verified?: boolean };
+
 export type EngineTool = { name: string; available: boolean; needs: string };
 export type JobKind = { operation: string; tools: EngineTool[] };
 
@@ -86,6 +88,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<WorkspaceStatus>("GET", "/api/status"),
+  modelKey: () => request<ModelKeyStatus>("GET", "/api/model-key"),
+  saveModelKey: (key: string) => request<ModelKeyStatus>("PUT", "/api/model-key", { key }),
+  removeModelKey: () => request<ModelKeyStatus>("DELETE", "/api/model-key"),
   engineJobs: () => request<JobKind[]>("GET", "/api/engine/jobs"),
   templates: () => request<Template[]>("GET", "/api/templates"),
   projects: () => request<ProjectEntry[]>("GET", "/api/projects"),
