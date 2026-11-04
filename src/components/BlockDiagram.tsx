@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from "react";
 import { moduleDiagram, topModule, type DiagramNode, type VerilogModule } from "../schematic/verilog";
 import { Icon } from "./icons";
 
-const COLUMN = 232;
-const INSTANCE_W = 178;
+const COLUMN = 196;
+const INSTANCE_W = 156;
 const INSTANCE_H = 58;
-const PORT_W = 120;
+const PORT_W = 96;
 const PORT_H = 26;
 const GAP = 16;
 const MARGIN = 20;
@@ -119,7 +119,7 @@ export function BlockDiagram({
         </select>
       </div>
       <div className="block-diagram-canvas">
-        <svg style={{ minWidth: Math.round(layout.width * 0.6) }} width="100%" height={Math.round(layout.height * 1)} viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
+        <svg style={{ minWidth: Math.round(layout.width * 0.6) }} width="100%" height={Math.max(Math.round(layout.height * 1.15), 260)} viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
           <g fill="none">
             {diagram.edges.map((edge) => {
               const from = layout.placed.get(edge.from);
@@ -156,10 +156,10 @@ export function BlockDiagram({
                 <title>{`${node.module}. ${onAsk ? "Click to select. " : ""}${node.known ? "Double-click to go inside." : "Its source isn't in this project."}`}</title>
                 <rect x={node.x} y={node.y} width={node.w} height={node.h} rx={7} />
                 <text x={node.x + 12} y={node.y + 24} className="block-module">
-                  {(node.module ?? "").slice(0, 21)}
+                  {(node.module ?? "").slice(0, 18)}
                 </text>
                 <text x={node.x + 12} y={node.y + 42} className="block-name">
-                  {node.label.slice(0, 24)}
+                  {node.label.slice(0, 16)}
                 </text>
                 {fresh && (
                   <text x={node.x + node.w - 10} y={node.y + 42} textAnchor="end" className="block-tag">

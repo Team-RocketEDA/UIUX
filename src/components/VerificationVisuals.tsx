@@ -34,10 +34,10 @@ export function VerifyFlow({ constraints, latest }: { constraints: Constraints; 
   const steps = [
     { icon: "file", title: "Design", lines: design.map(shortName) },
     { icon: "code", title: "Testbench", lines: tests.length ? tests.map(shortName) : ["In the design files"] },
-    { icon: "play", title: toolFor(operation), lines: [latest ? "Ran on this machine" : "Not run yet"] },
-    { icon: "plot", title: "Measured", lines: measurements.length ? measurements.map((item) => `${item.name} ${formatNumber(item.value)}`) : [latest ? "Pass or fail from the bench" : "Nothing yet"] },
-    { icon: "sliders", title: "Targets", lines: [`${checks.length} from constraints.yaml`, "The agent can't change them"] },
-    { icon: state === "pass" ? "check" : state === "fail" ? "x" : "clock", title: status ? status.replace("_", " ") : "No verdict", lines: ["Set by the engine"], state },
+    { icon: "play", title: toolFor(operation), lines: [latest ? "Ran here" : "Not run yet"] },
+    { icon: "plot", title: "Measured", lines: measurements.length ? measurements.map((item) => `${item.name} ${formatNumber(item.value)}`) : [latest ? "Bench pass or fail" : "Nothing yet"] },
+    { icon: "sliders", title: "Targets", lines: [`${checks.length} in constraints.yaml`, "Locked from the agent"] },
+    { icon: state === "pass" ? "check" : state === "fail" ? "x" : "clock", title: status ? status.replace("_", " ") : "No verdict", lines: ["From the engine"], state },
   ] as const;
   return (
     <div className="panel verify-flow-panel">

@@ -39,6 +39,11 @@ test("a block counts as tested only if a run simulated its file at this revision
   assert.deepEqual(states, { mac_unit: "passed", div_unit: "testbench", old_block: "stale", alone: "none" });
 });
 
+test("a module defined in two files counts once, by its most telling state", () => {
+  const result = moduleCoverage([module("a", "other/a.v"), module("a", "src/a.v")], [], [run({ sources: ["src/a.v"] })], "abc");
+  assert.deepEqual(result.map((item) => [item.module, item.state]), [["a", "passed"]]);
+});
+
 test("a failing run shows, and comes first", () => {
   const result = moduleCoverage([module("a"), module("b")], [], [run({ sources: ["src/b.v"], verdict: { status: "FAIL" } })], "abc");
   assert.deepEqual(result[0], { module: "b", file: "src/b.v", state: "failed", testbench: undefined });

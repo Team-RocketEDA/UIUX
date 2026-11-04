@@ -48,7 +48,7 @@ function findTestbench(name: string, entries: Pick<FileEntry, "path">[]): string
 // because a testbench nobody ran proves nothing.
 export function moduleCoverage(modules: VerilogModule[], entries: Pick<FileEntry, "path">[], evidence: Evidence[], revision: string): ModuleCoverage[] {
   const order: Coverage[] = ["failed", "passed", "stale", "testbench", "none"];
-  return modules
+  const sorted = modules
     .map((module) => {
       const run = evidence.find((item) => item.sources?.some((source) => source === module.file || source.endsWith(`/${module.file}`)));
       const testbench = findTestbench(module.name, entries);
@@ -60,6 +60,9 @@ export function moduleCoverage(modules: VerilogModule[], entries: Pick<FileEntry
       return { module: module.name, file: module.file, state, testbench };
     })
     .sort((a, b) => order.indexOf(a.state) - order.indexOf(b.state) || a.module.localeCompare(b.module));
+  // A module can be defined in more than one file. It's one block: keep its most telling state, which sorted first.
+  const seen = new Set<string>();
+  return sorted.filter((item) => !seen.has(item.module) && Boolean(seen.add(item.module)));
 }
 
 const TOOLS: Record<string, string> = { run_spice: "ngspice", run_hdl_test: "Icarus Verilog", run_optical: "SAX", run_drc: "Magic / KLayout", run_lvs: "Netgen", run_digital_flow: "LibreLane" };
