@@ -10,6 +10,7 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { segment } from "./segment";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
 import { FuelClient } from "../src/agent/fuel/client";
@@ -369,6 +370,17 @@ export function createWorkspace(options: WorkspaceOptions) {
             return { name: e.name, title: c.title ?? e.name, description: c.description ?? "", modified: statSync(path.join(dir, "constraints.yaml")).mtimeMs };
           })
           .sort((a, b) => b.modified - a.modified));
+      case "POST /api/segment": {
+        const { image, prompt } = await readBody(req);
+        if (typeof image !== "string" || !image.startsWith("data:image/") || typeof prompt !== "string" || !prompt.trim()) {
+          throw new HttpError(400, "Send a picture and what to find in it.");
+        }
+        try {
+          return json(res, 200, await segment(image, prompt, process.env));
+        } catch (error: any) {
+          throw new HttpError(502, error?.message ?? String(error));
+        }
+      }
       case "POST /api/projects": {
         const { name, template } = await readBody(req);
         if (!NAME_RE.test(name ?? "")) throw new HttpError(400, "Use lowercase letters, digits, - or _ (max 41 characters).");

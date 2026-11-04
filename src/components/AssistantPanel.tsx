@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { Constraints } from "../api";
-import type { Approval, SessionView, ToolStep } from "../agent/fuel";
+import { attachmentFromFile, captureView } from "../agent/attachments";
+import type { Approval, Attachment, SessionView, ToolStep } from "../agent/fuel";
 import { applyUnifiedDiff, describeChanges, type CircuitChange, type Proposal } from "../schematic/changes";
 import { useAgent } from "../agent/useAgent";
 import type { SurfaceId } from "../types";
@@ -236,6 +237,13 @@ function suggestions(constraints: Constraints): Suggestion[] {
   ];
 }
 
+const LEARN_SUGGESTIONS: { icon: IconName; text: string }[] = [
+  { icon: "bulb", text: "Walk me through this design, block by block" },
+  { icon: "sliders", text: "Explain what each check measures and why it matters" },
+  { icon: "warning", text: "Run the checks and help me understand the result" },
+  { icon: "sparkles", text: "Quiz me on this circuit" },
+];
+
 export function AssistantPanel({
   width,
   onClose,
@@ -263,6 +271,43 @@ export function AssistantPanel({
   const [input, setInput] = useState("");
   const [tab, setTab] = useState<"chat" | "activity" | "settings">("chat");
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [files, setFiles] = useState<Attachment[]>([]);
+  const [notice, setNotice] = useState<string>();
+  const [learn, setLearn] = useState(() => {
+    try {
+      return localStorage.getItem("rocketide.learn") === "1";
+    } catch {
+      return false;
+    }
+  });
+  const toggleLearn = () => {
+    setLearn((on) => {
+      try {
+        localStorage.setItem("rocketide.learn", on ? "0" : "1");
+      } catch {
+        // Only a convenience: it just won't be remembered.
+      }
+      return !on;
+    });
+  };
+  const addFiles = async (picked: Iterable<File>) => {
+    setNotice(undefined);
+    for (const file of picked) {
+      try {
+        const attachment = await attachmentFromFile(file);
+        setFiles((current) => [...current, attachment]);
+      } catch (err) {
+        setNotice(err instanceof Error ? err.message : String(err));
+      }
+    }
+  };
+  const addView = async () => {
+    setNotice(undefined);
+    const view = await captureView();
+    if (view) setFiles((current) => [...current, view]);
+    else setNotice("Open the layout, plots or schematic first, then attach what you see.");
+  };
 
   // A request prepared elsewhere (e.g. an engine tool on the top bar): put it in the box to review and send.
   useEffect(() => {
@@ -295,10 +340,15 @@ export function AssistantPanel({
   }, [view]);
 
   const send = (raw: string) => {
-    const text = raw.trim();
+    const text = raw.trim() || (files.length ? "Tell me what you read from this, and ask about anything unclear." : "");
     if (!text || busy || replay || !ready) return;
     setInput("");
-    void agent.send(text, autonomy === "Auto" ? "auto" : "approval");
+    setFiles([]);
+    void agent.send(text, learn ? "tutor" : autonomy === "Auto" ? "auto" : "approval", files);
+  };
+  const secondOpinion = () => {
+    if (busy || replay || !ready) return;
+    void agent.send("Give me an independent second opinion on this design and its evidence.", "reviewer");
   };
 
   return (
@@ -359,7 +409,7 @@ export function AssistantPanel({
           <div className="assistant-empty">
             <h2>{(constraints.checks ?? []).length ? "Design, check, or fix this project" : "What do you want to build?"}</h2>
             <div className="suggestion-grid">
-              {suggestions(constraints).map((item) => (
+              {(learn ? LEARN_SUGGESTIONS : suggestions(constraints)).map((item) => (
                 <button key={item.text} className="suggestion" onClick={() => send(item.text)} disabled={!ready || busy}>
                   <span className="suggestion-icon">
                     <Icon name={item.icon} size={14} />
@@ -369,6 +419,22 @@ export function AssistantPanel({
                 </button>
               ))}
             </div>
+            {!replay && (
+              <button
+                className="suggestion sketch"
+                disabled={!ready || busy}
+                onClick={() => {
+                  setInput("Turn this sketch into a netlist and a testbench, then run it with the engine.");
+                  fileRef.current?.click();
+                }}
+              >
+                <span className="suggestion-icon">
+                  <Icon name="camera" size={14} />
+                </span>
+                <span className="suggestion-text">Start from a photo of your circuit sketch or a lab sheet</span>
+                <Icon name="chevronRight" size={13} />
+              </button>
+            )}
             {!ready && <p className="assistant-hint">Starting the assistant for this project…</p>}
           </div>
         ) : (
@@ -376,11 +442,25 @@ export function AssistantPanel({
             {timeline.map((item) =>
               item.kind === "message" ? (
                 item.message.role === "user" ? (
-                  <div className="msg user" key={item.message.id}>
+                  <div className={`msg user ${item.message.attachment ? "with-attachment" : ""}`} key={item.message.id}>
+                    {item.message.attachment?.mime.startsWith("image/") ? (
+                      <img className="msg-image" src={item.message.attachment.url} alt={item.message.attachment.name} />
+                    ) : item.message.attachment ? (
+                      <span className="msg-file">
+                        <Icon name="file" size={13} />
+                        {item.message.attachment.name}
+                      </span>
+                    ) : null}
                     {item.message.text}
                   </div>
                 ) : (
                   <div className="msg agent markdown" key={item.message.id}>
+                    {item.message.model?.startsWith("muse-wonder") && (
+                      <div className="msg-author">
+                        <Icon name="eye" size={12} />
+                        Muse Wonder · independent review
+                      </div>
+                    )}
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.message.text}</ReactMarkdown>
                   </div>
                 )
@@ -439,7 +519,39 @@ export function AssistantPanel({
         ))}
       </div>
 
-      <footer className="composer">
+      <footer
+        className="composer"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          if (!replay) void addFiles(event.dataTransfer.files);
+        }}
+      >
+        {notice && <div className="composer-notice">{notice}</div>}
+        {files.length > 0 && (
+          <div className="composer-files">
+            {files.map((file, index) => (
+              <span className="composer-file" key={`${file.name}-${index}`}>
+                {file.mime.startsWith("image/") ? <img src={file.url} alt="" /> : <Icon name="file" size={13} />}
+                <span>{file.name}</span>
+                <button onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} aria-label={`Remove ${file.name}`}>
+                  <Icon name="close" size={11} />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <input
+          ref={fileRef}
+          type="file"
+          hidden
+          multiple
+          accept="image/png,image/jpeg,image/webp,image/gif,application/pdf"
+          onChange={(event) => {
+            void addFiles(event.target.files ?? []);
+            event.target.value = "";
+          }}
+        />
         <textarea
           ref={composerRef}
           value={input}
@@ -450,14 +562,43 @@ export function AssistantPanel({
               send(input);
             }
           }}
+          onPaste={(event) => {
+            const pasted = [...event.clipboardData.files];
+            if (pasted.length) {
+              event.preventDefault();
+              void addFiles(pasted);
+            }
+          }}
           rows={2}
           disabled={replay || !ready}
-          placeholder={replay ? "Replay is read-only" : ready ? "Ask the assistant to design, check, or fix…" : "Waiting for the assistant…"}
+          placeholder={
+            replay ? "Replay is read-only" : !ready ? "Waiting for the assistant…" : learn ? "Ask anything. The tutor explains and asks back…" : "Ask the assistant to design, check, or fix…"
+          }
           aria-label="Message the assistant"
         />
+        {!replay && (
+          <div className="composer-tools">
+            <button className="tool-button" onClick={() => fileRef.current?.click()} disabled={!ready} title="Attach a photo, screenshot or PDF. You can also paste or drop one.">
+              <Icon name="paperclip" size={13} />
+              Attach
+            </button>
+            <button className="tool-button" onClick={() => void addView()} disabled={!ready} title="Show Muse Spark the layout, plots or schematic you have open">
+              <Icon name="camera" size={13} />
+              This view
+            </button>
+            <button className={`tool-button ${learn ? "on" : ""}`} onClick={toggleLearn} aria-pressed={learn} title="Learn mode: the tutor explains and asks questions, and leaves the changes to you">
+              <Icon name="graduation" size={13} />
+              Learn
+            </button>
+            <button className="tool-button" onClick={secondOpinion} disabled={!ready || busy} title="Muse Wonder independently reviews the design and its evidence. It can't edit or change a verdict.">
+              <Icon name="eye" size={13} />
+              Second opinion
+            </button>
+          </div>
+        )}
         <div className="composer-row">
           {model && <span className="pill">{model}</span>}
-          <span className="pill" title="Set in constraints.yaml">{autonomy}</span>
+          <span className="pill" title={learn ? "The tutor explains and doesn't edit" : "Set in constraints.yaml"}>{learn ? "Learn" : autonomy}</span>
           <span className={`composer-meta ${view.iteration?.limitReached ? "limit" : ""}`}>
             {used}/{limit} repairs
           </span>
@@ -467,7 +608,7 @@ export function AssistantPanel({
               <Icon name="stop" size={14} />
             </button>
           ) : (
-            <button className="send" onClick={() => send(input)} disabled={replay || !ready || !input.trim()} aria-label="Send">
+            <button className="send" onClick={() => send(input)} disabled={replay || !ready || (!input.trim() && !files.length)} aria-label="Send">
               <Icon name="arrowUp" size={15} />
             </button>
           )}
