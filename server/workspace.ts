@@ -413,7 +413,7 @@ export function createWorkspace(options: WorkspaceOptions) {
           const heading = short.length > 60 ? `${short.slice(0, 57).trimEnd()}...` : short;
           writeFileSync(file, readFileSync(file, "utf8").replace(/^title:.*$/m, `title: ${JSON.stringify(heading)}`).replace(/^description:.*$/m, `description: ${JSON.stringify(short)}`));
         }
-        await git(dir, "init", "-q");
+        await git(dir, "init", "-q", "-b", "main");
         await git(dir, "add", "-A");
         await git(dir, "commit", "-q", "-m", `Create project from ${template}`);
         return json(res, 201, { name });

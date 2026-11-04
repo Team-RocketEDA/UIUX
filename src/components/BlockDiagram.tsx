@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { moduleDiagram, topModule, type DiagramNode, type VerilogModule } from "../schematic/verilog";
 import { Icon } from "./icons";
 
-const COLUMN = 250;
+const COLUMN = 232;
 const INSTANCE_W = 178;
 const INSTANCE_H = 58;
 const PORT_W = 120;
@@ -38,13 +38,29 @@ export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
   const top = useMemo(() => topModule(modules), [modules]);
   const [path, setPath] = useState<string[]>([]);
   const [hovered, setHovered] = useState<string>();
+  const [showClocks, setShowClocks] = useState(false);
   const currentName = path[path.length - 1] ?? top?.name;
   const current = modules.find((module) => module.name === currentName) ?? top;
-  const diagram = useMemo(() => (current ? moduleDiagram(current, modules) : undefined), [current, modules]);
+  const diagram = useMemo(() => (current ? moduleDiagram(current, modules, { showClocks }) : undefined), [current, modules, showClocks]);
   const layout = useMemo(() => (diagram ? place(diagram.nodes) : undefined), [diagram]);
   if (!current || !diagram || !layout) return null;
 
   const instanceCount = current.instances.length;
+  // Each wire gets its own spot along a block's edge, in the order that crosses the fewest others.
+  const spread = (ids: string[], y: (id: string) => number, box: Placed) => {
+    const sorted = [...ids].sort((a, b) => y(a) - y(b));
+    return (id: string) => box.y + (box.h * (sorted.indexOf(id) + 1)) / (sorted.length + 1);
+  };
+  const centre = (id: string) => {
+    const node = layout.placed.get(id);
+    return node ? node.y + node.h / 2 : 0;
+  };
+  const outOf = new Map<string, string[]>();
+  const into = new Map<string, string[]>();
+  for (const edge of diagram.edges) {
+    outOf.set(edge.from, [...(outOf.get(edge.from) ?? []), edge.to]);
+    into.set(edge.to, [...(into.get(edge.to) ?? []), edge.from]);
+  }
   return (
     <section className="block-diagram" aria-label={`Block diagram of ${current.name}`}>
       <div className="block-diagram-head">
@@ -64,6 +80,10 @@ export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
         <span className="muted">
           {instanceCount} block{instanceCount === 1 ? "" : "s"} · {current.ports.length} ports · {current.file}
         </span>
+        <label className="block-diagram-toggle">
+          <input type="checkbox" checked={showClocks} onChange={(event) => setShowClocks(event.target.checked)} />
+          Clock and reset
+        </label>
         <select
           value={current.name}
           onChange={(event) => setPath(event.target.value === top?.name ? [] : [event.target.value])}
@@ -79,13 +99,13 @@ export function BlockDiagram({ modules }: { modules: VerilogModule[] }) {
         </select>
       </div>
       <div className="block-diagram-canvas">
-        <svg width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
+        <svg style={{ minWidth: Math.round(layout.width * 0.72) }} width="100%" height={Math.round(layout.height * 1)} viewBox={`0 0 ${layout.width} ${layout.height}`} preserveAspectRatio="xMidYMid meet" role="img" aria-label={`Blocks and wiring inside ${current.name}`}>
           <g fill="none">
             {diagram.edges.map((edge) => {
               const from = layout.placed.get(edge.from);
               const to = layout.placed.get(edge.to);
               if (!from || !to) return null;
-              const [x1, y1, x2, y2] = [from.x + from.w, from.y + from.h / 2, to.x, to.y + to.h / 2];
+              const [x1, y1, x2, y2] = [from.x + from.w, spread(outOf.get(edge.from)!, centre, from)(edge.to), to.x, spread(into.get(edge.to)!, centre, to)(edge.from)];
               const bend = Math.max(36, Math.abs(x2 - x1) / 2);
               const lit = hovered === edge.from || hovered === edge.to;
               return (

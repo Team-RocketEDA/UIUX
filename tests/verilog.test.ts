@@ -84,6 +84,16 @@ test("draws wires along nets, in order from input to output", () => {
   assert.ok(layer("port:x") < layer("inst:u_a") && layer("inst:u_a") < layer("inst:u_b") && layer("inst:u_b") < layer("port:y"));
 });
 
+test("can leave out clock and reset, which reach everything", () => {
+  const modules = [...parseVerilog(LEAF), ...parseVerilog(TOP)];
+  const top = modules.find((module) => module.name === "top")!;
+  const without = moduleDiagram(top, modules, { showClocks: false });
+  assert.ok(!without.nodes.some((node) => node.id === "port:clk"));
+  assert.ok(!without.edges.some((edge) => edge.nets.includes("clk")));
+  assert.ok(without.edges.some((edge) => edge.nets.includes("s0")));
+  assert.ok(moduleDiagram(top, modules).nodes.some((node) => node.id === "port:clk"));
+});
+
 test("a feedback loop doesn't hang it", () => {
   const source = `
     module cell(input a, output b); endmodule

@@ -150,19 +150,24 @@ export function topModule(modules: VerilogModule[]): VerilogModule | undefined {
   return [...(candidates.length ? candidates : modules)].sort((a, b) => named(b) - named(a) || size(b) - size(a))[0];
 }
 
+// They reach almost every block, so showing them hides the wiring that says what the design does.
+const CLOCK_OR_RESET = /^(clk|clock|rst|reset|arst|srst)(_?n|_i|_ni)?$/i;
+
 export type DiagramNode = { id: string; label: string; kind: "input" | "output" | "instance"; module?: string; known?: boolean; layer: number; width?: string };
 export type DiagramEdge = { from: string; to: string; nets: string[] };
 
 // One module's insides: its ports and instances as nodes, and a wire wherever a net joins an output to an input.
-export function moduleDiagram(module: VerilogModule, modules: VerilogModule[]): { nodes: DiagramNode[]; edges: DiagramEdge[] } {
+export function moduleDiagram(module: VerilogModule, modules: VerilogModule[], { showClocks = true } = {}): { nodes: DiagramNode[]; edges: DiagramEdge[] } {
   const byName = new Map(modules.map((item) => [item.name, item]));
   const drivers = new Map<string, string[]>();
   const sinks = new Map<string, string[]>();
   const add = (map: Map<string, string[]>, net: string, id: string) => map.set(net, [...(map.get(net) ?? []), id]);
-  const nets = (expression: string) => (expression.match(/\b[A-Za-z_]\w*\b/g) ?? []).filter((word) => !/^\d/.test(word));
+  const hidden = (net: string) => !showClocks && CLOCK_OR_RESET.test(net);
+  const nets = (expression: string) => (expression.match(/\b[A-Za-z_]\w*\b/g) ?? []).filter((word) => !/^\d/.test(word) && !hidden(word));
 
   const nodes: DiagramNode[] = [];
   for (const port of module.ports) {
+    if (hidden(port.name)) continue;
     const id = `port:${port.name}`;
     if (port.direction === "output") {
       nodes.push({ id, label: port.name, kind: "output", layer: 0, width: port.width });

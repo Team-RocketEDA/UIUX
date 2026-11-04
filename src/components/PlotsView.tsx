@@ -202,13 +202,13 @@ function BodePlots({ evidence, constraints, running, readFile, onRunChecks, swit
             <text x={right + 6} y={y(c.value - 180, scale, height) + 16} className="target-name">{c.metric}</text>
           </g>
         ))}
-        {freqTargets.map((c) => {
+        {freqTargets.map((c, index) => {
           const f = c.value * HZ[c.unit!.toLowerCase()];
           if (f < fMin || f > fMax) return null;
           return (
             <g key={c.metric} className="target">
               <line x1={lx(f)} x2={lx(f)} y1={PAD.top} y2={height - PAD.bottom} />
-              {kind === "gain" && <text x={lx(f) - 4} y={height - PAD.bottom - 6} textAnchor="end">{c.metric} {cmp(c.comparison)} {c.value} {c.unit}</text>}
+              {kind === "gain" && <text x={lx(f) - 4} y={height - PAD.bottom - 6 - index * 14} textAnchor="end">{c.metric} {cmp(c.comparison)} {c.value} {c.unit}</text>}
             </g>
           );
         })}
