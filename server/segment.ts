@@ -34,7 +34,7 @@ export function outputText(stream: string): string {
 
 export async function segment(image: string, prompt: string, env: Record<string, string | undefined>, fetchImpl: typeof fetch = fetch) {
   const key = env.MODEL_API_KEY;
-  if (!key) throw new Error("Add MODEL_API_KEY to .env to use Find.");
+  if (!key) throw new Error("Add your Meta API key in the assistant's Settings to use Find.");
   const base = (env.ROCKET_META_BASE_URL || "https://api.meta.ai/v1").replace(/\/$/, "");
   const response = await fetchImpl(`${base}/responses`, {
     method: "POST",

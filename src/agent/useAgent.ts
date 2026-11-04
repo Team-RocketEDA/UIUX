@@ -43,15 +43,20 @@ export function useAgent(): Agent {
     let retry: number | undefined;
 
     const connect = async () => {
-      // Opening a project starts its agent, so the first tries can come before it answers.
-      if (!sessionRef.current) await restore();
       if (controller.signal.aborted) return;
       setConnected(true);
+      // Catch up once the stream is open, not before: a reply that lands between the two would otherwise be lost. It
+      // matters on every connection, because the agent may have restarted (a new key) and answered in the meantime.
+      let caughtUp = false;
       client
         .subscribe((event) => {
           setError(undefined);
           if (event.type === "rocket.replay") replayRef.current = true;
           setView((current) => reduce(current, event));
+          if (!caughtUp) {
+            caughtUp = true;
+            void restore();
+          }
         }, controller.signal)
         .then(() => {
           // A cancelled connection (unmount, or React's dev double-mount) must not touch state:
@@ -74,13 +79,14 @@ export function useAgent(): Agent {
     const restore = async () => {
       if (replayRef.current) return;
       try {
-        const sessionId = await client.latestSession();
+        const sessionId = sessionRef.current ?? (await client.latestSession());
         if (!sessionId || controller.signal.aborted) return;
         const events = await client.history(sessionId);
         // A message sent meanwhile started its own session; keep that one.
-        if (controller.signal.aborted || sessionRef.current) return;
+        if (controller.signal.aborted || (sessionRef.current && sessionRef.current !== sessionId)) return;
         sessionRef.current = sessionId;
-        setView(events.reduce(reduce, emptyView(sessionId)));
+        // Added to what the stream has delivered meanwhile, which is at least as new.
+        setView((current) => events.reduce(reduce, current.sessionId === sessionId ? current : emptyView(sessionId)));
       } catch {
         // Agent still starting; connect() tries again with the stream.
       }
@@ -102,7 +108,8 @@ export function useAgent(): Agent {
       }
       await client.prompt(sessionRef.current, text, PROFILES[profile], files);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setError(message.includes("503") ? "The assistant is starting. Try again in a moment." : message);
     }
   }, []);
 

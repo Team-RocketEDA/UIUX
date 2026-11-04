@@ -3621,3 +3621,60 @@ button.activity-row:hover {
 .layout-find-status {
   color: #a8a39c;
 }
+
+/* The student's Meta Model API key */
+.assistant-key {
+  padding: 12px 14px 0;
+}
+.model-key {
+  margin-bottom: 12px;
+  padding: 11px 12px;
+  border: 1px solid var(--line, #34312e);
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+.model-key-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.model-key-state {
+  margin-left: auto;
+  color: #6cc890;
+  font-size: 11.5px;
+}
+.model-key p {
+  margin: 7px 0 0;
+}
+.model-key a {
+  color: #ee6a4c;
+}
+.model-key form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 9px;
+}
+.model-key input {
+  flex: 1 1 150px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--line, #34312e);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 12px;
+}
+.model-key-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 9px;
+}
+.model-key-error {
+  color: #ee6a4c;
+}
+.model-key-note {
+  color: #a8a39c;
+}

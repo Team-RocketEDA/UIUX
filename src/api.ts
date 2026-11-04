@@ -12,6 +12,8 @@ export type WorkspaceStatus = {
   project: string | null;
 };
 
+export type ModelKeyStatus = { configured: boolean; source: "saved" | "env" | null; verified?: boolean };
+
 // From the engine's get_capabilities (see server/capabilities.ts): its readiness and reasons, unchanged.
 export type EngineTool = { name: string; available: boolean; missing: string[]; remedy?: string };
 export type JobKind = { operation: string; readiness: string; reason?: string; tools: EngineTool[] };
@@ -87,6 +89,9 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<WorkspaceStatus>("GET", "/api/status"),
+  modelKey: () => request<ModelKeyStatus>("GET", "/api/model-key"),
+  saveModelKey: (key: string) => request<ModelKeyStatus>("PUT", "/api/model-key", { key }),
+  removeModelKey: () => request<ModelKeyStatus>("DELETE", "/api/model-key"),
   engineJobs: (refresh = false) => request<JobKind[]>("GET", `/api/engine/jobs${refresh ? "?refresh=1" : ""}`),
   templates: () => request<Template[]>("GET", "/api/templates"),
   projects: () => request<ProjectEntry[]>("GET", "/api/projects"),
