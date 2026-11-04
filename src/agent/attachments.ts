@@ -1,4 +1,4 @@
-// Pictures and PDFs for Muse Spark: files the student picks, and what's on screen right now. Everything stays a
+// Pictures and PDFs for Muse Spark: files you pick, and what's on screen right now. Everything stays a
 // data: URL in the browser until it's sent, through the server, which holds the key.
 import type { Attachment } from "./fuel";
 
@@ -71,7 +71,7 @@ async function svgsPicture(svgs: SVGSVGElement[]): Promise<string> {
   return canvas.toDataURL("image/png");
 }
 
-// What the student has open: the layout, the plots or the schematic. Nothing, on any other page.
+// What's open: the layout, the plots or the schematic. Nothing, on any other page.
 export async function captureView(): Promise<Attachment | undefined> {
   const layout = document.querySelector<HTMLCanvasElement>(".layout-canvas canvas");
   if (layout) return { name: "layout-view.png", mime: "image/png", url: canvasPicture(layout) };

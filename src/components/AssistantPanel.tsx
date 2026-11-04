@@ -463,7 +463,7 @@ export function AssistantPanel({
                 <span className="suggestion-icon">
                   <Icon name="camera" size={14} />
                 </span>
-                <span className="suggestion-text">Start from a photo of your circuit sketch or a lab sheet</span>
+                <span className="suggestion-text">Start from a photo of your circuit sketch or a spec</span>
                 <Icon name="chevronRight" size={13} />
               </button>
             )}
