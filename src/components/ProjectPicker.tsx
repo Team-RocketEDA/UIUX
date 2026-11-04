@@ -25,6 +25,21 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
       .catch((err: Error) => setError(`Workspace server unreachable: ${err.message}`));
   }, []);
 
+  const lessons = templates.filter((item) => item.lesson);
+
+  // A lesson is a project named after it. Coming back to one reopens your work rather than starting over.
+  const startLesson = async (id: string) => {
+    setBusy(true);
+    setError(undefined);
+    try {
+      if (!projects.some((project) => project.name === id)) await api.createProject(id, id);
+      onOpen(id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+
   const create = async () => {
     setBusy(true);
     setError(undefined);
@@ -43,12 +58,33 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
         <header className="picker-header">
           <Logo size={44} animate="launch" title="RocketIDE" />
           <div>
-            <h1>RocketEDA</h1>
+            <h1>RocketIDE</h1>
             <p>Set your constraints. Describe your chip. Watch it get designed, tested and improved.</p>
           </div>
         </header>
 
         {error && <div className="agent-error">{error}</div>}
+
+        {lessons.length > 0 && (
+          <div className="panel picker-panel lesson-panel">
+            <div className="panel-heading">
+              <span className="eyebrow">New to chip design? Start here</span>
+              <small>No experience needed. A real simulator checks your work.</small>
+            </div>
+            <div className="lesson-list">
+              {lessons.map((item) => (
+                <button key={item.id} className="lesson-card" disabled={busy} onClick={() => void startLesson(item.id)}>
+                  <b>{item.title}</b>
+                  <span>{item.description}</span>
+                  <em>
+                    {projects.some((project) => project.name === item.id) ? "Continue" : "Start"}
+                    <Icon name="chevronRight" size={12} />
+                  </em>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
         <div className="picker-grid">
           <div className="panel picker-panel">
@@ -67,7 +103,7 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
               <small>Lowercase letters, digits, - and _. The project becomes its own git repository.</small>
             </label>
             <div className="template-list" role="radiogroup" aria-label="Template">
-              {templates.map((item) => (
+              {templates.filter((item) => !item.lesson).map((item) => (
                 <button
                   key={item.id}
                   role="radio"

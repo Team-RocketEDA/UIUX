@@ -103,7 +103,7 @@ export function useAgent(): Agent {
     try {
       setError(undefined);
       if (!sessionRef.current) {
-        sessionRef.current = await client.createSession("RocketEDA IDE");
+        sessionRef.current = await client.createSession("RocketIDE");
         setView((current) => ({ ...current, sessionId: sessionRef.current }));
       }
       await client.prompt(sessionRef.current, text, PROFILES[profile], files);

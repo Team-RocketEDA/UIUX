@@ -3678,3 +3678,91 @@ button.activity-row:hover {
 .model-key-note {
   color: #a8a39c;
 }
+
+/* Lessons on the start screen */
+.lesson-panel {
+  margin-bottom: 14px;
+}
+.lesson-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 10px;
+}
+.lesson-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lesson-card:hover:not(:disabled) {
+  border-color: #ee6a4c;
+}
+.lesson-card span {
+  flex: 1;
+  color: #a8a39c;
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+.lesson-card em {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: #ee6a4c;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 600;
+}
+.lesson-open {
+  margin-bottom: 10px;
+}
+
+/* Live model calls */
+.model-last {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  margin: 6px 0 0;
+  color: #a8a39c;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+  white-space: nowrap;
+}
+.model-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #6cc890;
+}
+.model-dot.failed {
+  background: #ee6a4c;
+}
+.model-calls {
+  padding: 12px 14px 0;
+}
+.model-calls table {
+  width: 100%;
+  margin-top: 6px;
+  border-collapse: collapse;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
+  font-size: 10.5px;
+}
+.model-calls th,
+.model-calls td {
+  padding: 3px 6px 3px 0;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  white-space: nowrap;
+}
+.model-calls th {
+  color: #a8a39c;
+  font-weight: 500;
+}

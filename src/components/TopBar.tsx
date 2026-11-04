@@ -93,7 +93,7 @@ export function TopBar({
     <header className="topbar">
       <button className="brand" onClick={onSwitchProject} title="Switch project">
         <Logo size={26} />
-        <b>RocketEDA</b>
+        <b>RocketIDE</b>
       </button>
       <button className="project-pill" onClick={onSwitchProject} title="Switch project">
         <Icon name="folder" size={13} />
