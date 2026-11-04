@@ -1,4 +1,5 @@
 import { useState } from "react";
+import type { CheckRow } from "../api";
 import type { SurfaceId } from "../types";
 import { Icon, type IconName } from "./icons";
 
@@ -49,6 +50,56 @@ function saveCollapsed(collapsed: boolean) {
   }
 }
 
+type Tone = "pass" | "fail" | "stale" | "idle";
+
+// Only a current PASS is green; a PASS from older sources is stale, and anything that didn't run stays neutral.
+function tone(row: CheckRow): Tone {
+  if (row.status === "FAIL") return "fail";
+  if (row.status === "PASS") return row.stale ? "stale" : "pass";
+  return "idle";
+}
+
+const TONE_LABEL: Record<Tone, string> = { pass: "passing", fail: "failing", stale: "stale", idle: "not run" };
+
+function ChecksCard({ rows, running, onOpen }: { rows: CheckRow[]; running: boolean; onOpen: () => void }) {
+  const tones = rows.map(tone);
+  const count = (t: Tone) => tones.filter((x) => x === t).length;
+  const passing = count("pass");
+  const summary = running
+    ? "Running checks…"
+    : !rows.length
+      ? "No checks in constraints.yaml"
+      : passing === rows.length
+        ? "All checks passing"
+        : (["fail", "stale", "idle"] as Tone[])
+            .filter((t) => count(t))
+            .map((t) => `${count(t)} ${TONE_LABEL[t]}`)
+            .join(" · ");
+  const state = running ? "running" : count("fail") ? "fail" : rows.length && passing === rows.length ? "pass" : "idle";
+  return (
+    <button className={`nav-checks ${state}`} onClick={onOpen} aria-label={`Checks: ${passing} of ${rows.length} passing. ${summary}`}>
+      <span className="nav-checks-head">
+        <span>Checks</span>
+        <b>
+          {passing}
+          <span>/{rows.length}</span>
+        </b>
+      </span>
+      <span className="nav-checks-bar" aria-hidden="true">
+        {rows.map((row, i) => (
+          <span key={row.check.id} className={`seg ${tones[i]}`} title={`${row.check.title ?? row.check.id}: ${TONE_LABEL[tones[i]]}`} />
+        ))}
+      </span>
+      <span className="nav-checks-note">
+        {running && <span className="spinner" />}
+        {summary}
+      </span>
+    </button>
+  );
+}
+
+type Tip = { label: string; hint?: string; top: number };
+
 function NavItem({
   icon,
   label,
@@ -56,6 +107,11 @@ function NavItem({
   active,
   pressed,
   badge,
+  count,
+  busy,
+  status,
+  collapsed,
+  onTip,
   onClick,
 }: {
   icon: IconName;
@@ -64,32 +120,57 @@ function NavItem({
   active?: boolean;
   pressed?: boolean;
   badge?: number;
+  count?: number;
+  busy?: boolean;
+  status?: "ready" | "starting" | "error" | "stopped";
+  collapsed: boolean;
+  onTip: (tip: Tip | null) => void;
   onClick: () => void;
 }) {
+  const show = (event: { currentTarget: HTMLElement }) => {
+    if (!collapsed) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    onTip({ label: badge ? `${label} · ${badge} to fix` : label, hint, top: box.top + box.height / 2 });
+  };
+  const trailing = busy ? (
+    <span className="spinner" aria-label="running" />
+  ) : badge ? (
+    <span className="nav-badge" aria-label={`${badge} to fix`}>
+      {badge}
+    </span>
+  ) : count ? (
+    <span className="nav-count" aria-label={`${count} runs`}>
+      {count}
+    </span>
+  ) : hint ? (
+    <kbd className="nav-key">{hint}</kbd>
+  ) : null;
   return (
     <button
       className={`nav-item ${active || pressed ? "active" : ""}`}
       onClick={onClick}
-      title={hint ? `${label} (${hint})` : label}
+      onMouseEnter={show}
+      onFocus={show}
+      onMouseLeave={() => onTip(null)}
+      onBlur={() => onTip(null)}
+      title={collapsed ? undefined : hint ? `${label} (${hint})` : label}
+      aria-label={collapsed ? label : undefined}
       aria-current={active ? "page" : undefined}
       aria-pressed={pressed}
     >
       <span className="nav-icon">
         <Icon name={icon} size={17} />
         {!!badge && <span className="nav-dot" aria-hidden="true" />}
+        {status && <span className={`nav-status ${status}`} aria-hidden="true" />}
       </span>
       <span className="nav-label">{label}</span>
-      {!!badge && (
-        <span className="nav-badge" aria-label={`${badge} failing`}>
-          {badge}
-        </span>
-      )}
-      {hint && !badge && <kbd className="nav-key">{hint}</kbd>}
+      {trailing}
     </button>
   );
 }
 
-// The page navigation, labelled and grouped; it collapses to an icon rail. Files, assistant and project below.
+// The page navigation: project status at the top, labelled and grouped pages, panels below. It collapses to an
+// icon rail with tooltips.
 export function ActivityBar({
   surface,
   onNavigate,
@@ -99,6 +180,10 @@ export function ActivityBar({
   onToggleAssistant,
   onSwitchProject,
   issues,
+  checks,
+  checksRunning,
+  plotRuns,
+  agentState,
 }: {
   surface: SurfaceId | null;
   onNavigate: (surface: SurfaceId) => void;
@@ -108,18 +193,26 @@ export function ActivityBar({
   onToggleAssistant: () => void;
   onSwitchProject: () => void;
   issues: number;
+  checks: CheckRow[];
+  checksRunning: boolean;
+  plotRuns: number;
+  agentState: "starting" | "ready" | "error" | "stopped";
 }) {
   const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [tip, setTip] = useState<Tip | null>(null);
   const toggle = () => {
+    setTip(null);
     setCollapsed((value) => {
       saveCollapsed(!value);
       return !value;
     });
   };
+  const agentLabel = agentState === "ready" ? "Assistant" : agentState === "starting" ? "Assistant (starting)" : agentState === "error" ? "Assistant (not running)" : "Assistant (stopped)";
   let key = 0;
   return (
     <nav className={`rail ${collapsed ? "collapsed" : ""}`} aria-label="Workbench">
       <div className="nav-scroll">
+        {!collapsed && <ChecksCard rows={checks} running={checksRunning} onOpen={() => onNavigate("verification")} />}
         {GROUPS.map((group) => (
           <div className="nav-group" key={group.title} role="group" aria-label={group.title}>
             <span className="nav-heading">{group.title}</span>
@@ -131,6 +224,10 @@ export function ActivityBar({
                 hint={String(++key)}
                 active={surface === page.id}
                 badge={page.id === "verification" ? issues : undefined}
+                busy={page.id === "verification" && checksRunning}
+                count={page.id === "plots" ? plotRuns : undefined}
+                collapsed={collapsed}
+                onTip={setTip}
                 onClick={() => onNavigate(page.id)}
               />
             ))}
@@ -138,9 +235,18 @@ export function ActivityBar({
         ))}
       </div>
       <div className="nav-group nav-footer">
-        <NavItem icon="folder" label="Files" hint="Ctrl B" pressed={explorerOpen} onClick={onToggleExplorer} />
-        <NavItem icon="sparkles" label="Assistant" hint="Ctrl I" pressed={assistantOpen} onClick={onToggleAssistant} />
-        <NavItem icon="history" label="Switch project" onClick={onSwitchProject} />
+        <NavItem icon="folder" label="Files" hint="Ctrl B" pressed={explorerOpen} collapsed={collapsed} onTip={setTip} onClick={onToggleExplorer} />
+        <NavItem
+          icon="sparkles"
+          label={collapsed ? agentLabel : "Assistant"}
+          hint="Ctrl I"
+          pressed={assistantOpen}
+          status={agentState}
+          collapsed={collapsed}
+          onTip={setTip}
+          onClick={onToggleAssistant}
+        />
+        <NavItem icon="history" label="Switch project" collapsed={collapsed} onTip={setTip} onClick={onSwitchProject} />
         <button
           className="nav-collapse"
           onClick={toggle}
@@ -152,6 +258,12 @@ export function ActivityBar({
           <span className="nav-label">Collapse</span>
         </button>
       </div>
+      {collapsed && tip && (
+        <div className="nav-tip" role="tooltip" style={{ top: tip.top }}>
+          {tip.label}
+          {tip.hint && <kbd>{tip.hint}</kbd>}
+        </div>
+      )}
     </nav>
   );
 }
