@@ -72,6 +72,7 @@ npm run serve         # http://localhost:5173; set ROCKET_UI_HOST and ROCKET_UI_
 |---|---|---|
 | `ROCKET_FUEL_HOME` | `../rocket_fuel` | the agent harness |
 | `ROCKET_ENGINE_HOME` | `../rocket-engine` | Rocket Engine checkout (simulations, evidence) |
+| `ROCKET_ENGINE_URL` | unset | a running engine shared with the agent and other clients (RocketIDE starts one); without it each check starts the engine for that call |
 | `ROCKET_PROJECTS_DIR` | `~/RocketEDA/projects` | where projects live |
 | `ROCKET_AGENT_URL` | unset | with `VITE_ROCKET_AGENT=replay`, stream a recording from rocket_fuel's `evals/replay_server.py` instead |
 
