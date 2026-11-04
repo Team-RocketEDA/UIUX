@@ -1,5 +1,4 @@
 import { useState } from "react";
-import type { CheckRow } from "../api";
 import type { SurfaceId } from "../types";
 import { Icon, type IconName } from "./icons";
 
@@ -48,54 +47,6 @@ function saveCollapsed(collapsed: boolean) {
   } catch {
     // Storage blocked: the choice lasts until reload.
   }
-}
-
-type Tone = "pass" | "fail" | "stale" | "idle";
-
-// Only a current PASS is green; a PASS from older sources is stale, and anything that didn't run stays neutral.
-function tone(row: CheckRow): Tone {
-  if (row.status === "FAIL") return "fail";
-  if (row.status === "PASS") return row.stale ? "stale" : "pass";
-  return "idle";
-}
-
-const TONE_LABEL: Record<Tone, string> = { pass: "passing", fail: "failing", stale: "stale", idle: "not run" };
-
-function ChecksCard({ rows, running, onOpen }: { rows: CheckRow[]; running: boolean; onOpen: () => void }) {
-  const tones = rows.map(tone);
-  const count = (t: Tone) => tones.filter((x) => x === t).length;
-  const passing = count("pass");
-  const summary = running
-    ? "Running checks…"
-    : !rows.length
-      ? "No checks in constraints.yaml"
-      : passing === rows.length
-        ? "All checks passing"
-        : (["fail", "stale", "idle"] as Tone[])
-            .filter((t) => count(t))
-            .map((t) => `${count(t)} ${TONE_LABEL[t]}`)
-            .join(" · ");
-  const state = running ? "running" : count("fail") ? "fail" : rows.length && passing === rows.length ? "pass" : "idle";
-  return (
-    <button className={`nav-checks ${state}`} onClick={onOpen} aria-label={`Checks: ${passing} of ${rows.length} passing. ${summary}`}>
-      <span className="nav-checks-head">
-        <span>Checks</span>
-        <b>
-          {passing}
-          <span>/{rows.length}</span>
-        </b>
-      </span>
-      <span className="nav-checks-bar" aria-hidden="true">
-        {rows.map((row, i) => (
-          <span key={row.check.id} className={`seg ${tones[i]}`} title={`${row.check.title ?? row.check.id}: ${TONE_LABEL[tones[i]]}`} />
-        ))}
-      </span>
-      <span className="nav-checks-note">
-        {running && <span className="spinner" />}
-        {summary}
-      </span>
-    </button>
-  );
 }
 
 type Tip = { label: string; hint?: string; top: number };
@@ -169,8 +120,8 @@ function NavItem({
   );
 }
 
-// The page navigation: project status at the top, labelled and grouped pages, panels below. It collapses to an
-// icon rail with tooltips.
+// The navigation: files and project switching at the top, then the labelled pages, the assistant at the bottom.
+// It collapses to an icon rail with tooltips.
 export function ActivityBar({
   surface,
   onNavigate,
@@ -180,7 +131,6 @@ export function ActivityBar({
   onToggleAssistant,
   onSwitchProject,
   issues,
-  checks,
   checksRunning,
   plotRuns,
   agentState,
@@ -193,7 +143,6 @@ export function ActivityBar({
   onToggleAssistant: () => void;
   onSwitchProject: () => void;
   issues: number;
-  checks: CheckRow[];
   checksRunning: boolean;
   plotRuns: number;
   agentState: "starting" | "ready" | "error" | "stopped";
@@ -211,8 +160,11 @@ export function ActivityBar({
   let key = 0;
   return (
     <nav className={`rail ${collapsed ? "collapsed" : ""}`} aria-label="Workbench">
+      <div className="nav-group nav-top" role="group" aria-label="Workspace">
+        <NavItem icon="folder" label="Files" hint="Ctrl B" pressed={explorerOpen} collapsed={collapsed} onTip={setTip} onClick={onToggleExplorer} />
+        <NavItem icon="history" label="Switch project" collapsed={collapsed} onTip={setTip} onClick={onSwitchProject} />
+      </div>
       <div className="nav-scroll">
-        {!collapsed && <ChecksCard rows={checks} running={checksRunning} onOpen={() => onNavigate("verification")} />}
         {GROUPS.map((group) => (
           <div className="nav-group" key={group.title} role="group" aria-label={group.title}>
             <span className="nav-heading">{group.title}</span>
@@ -235,7 +187,6 @@ export function ActivityBar({
         ))}
       </div>
       <div className="nav-group nav-footer">
-        <NavItem icon="folder" label="Files" hint="Ctrl B" pressed={explorerOpen} collapsed={collapsed} onTip={setTip} onClick={onToggleExplorer} />
         <NavItem
           icon="sparkles"
           label={collapsed ? agentLabel : "Assistant"}
@@ -246,7 +197,6 @@ export function ActivityBar({
           onTip={setTip}
           onClick={onToggleAssistant}
         />
-        <NavItem icon="history" label="Switch project" collapsed={collapsed} onTip={setTip} onClick={onSwitchProject} />
         <button
           className="nav-collapse"
           onClick={toggle}

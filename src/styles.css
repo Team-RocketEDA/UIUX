@@ -497,101 +497,6 @@ kbd {
   box-shadow: 0 0 0 2px var(--bg);
 }
 
-/* Project status at the top of the nav: one segment per check, coloured by its latest verdict. */
-.nav-checks {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  width: 100%;
-  padding: 10px 11px 10px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: linear-gradient(180deg, var(--surface), var(--bg));
-  color: var(--text-soft);
-  text-align: left;
-  transition: border-color 0.15s ease, background-color 0.15s ease;
-}
-
-.nav-checks:hover {
-  border-color: var(--border-strong);
-  background: var(--surface);
-}
-
-.nav-checks:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: -2px;
-}
-
-.nav-checks-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--muted);
-}
-
-.nav-checks-head b {
-  color: var(--text);
-  font: 600 15px var(--mono);
-  letter-spacing: 0;
-}
-
-.nav-checks-head b span {
-  color: var(--muted);
-  font-size: 12px;
-}
-
-.nav-checks-bar {
-  display: flex;
-  gap: 3px;
-  height: 5px;
-}
-
-.nav-checks-bar .seg {
-  flex: 1;
-  border-radius: 3px;
-  background: var(--border-strong);
-}
-
-.nav-checks-bar .seg.pass {
-  background: var(--green);
-}
-
-.nav-checks-bar .seg.fail {
-  background: var(--red);
-}
-
-.nav-checks-bar .seg.stale {
-  background: var(--amber);
-}
-
-.nav-checks.running .nav-checks-bar .seg {
-  animation: nav-pulse 1.2s ease-in-out infinite;
-}
-
-.nav-checks-note {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--muted);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.nav-checks.pass .nav-checks-note {
-  color: var(--green);
-}
-
-.nav-checks.fail .nav-checks-note {
-  color: var(--red);
-}
-
 @keyframes nav-pulse {
   50% {
     opacity: 0.45;
@@ -671,6 +576,11 @@ kbd {
   }
 }
 
+.nav-top {
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
 .nav-footer {
   padding-top: 10px;
   border-top: 1px solid var(--border);
@@ -729,12 +639,10 @@ kbd {
 @media (prefers-reduced-motion: reduce) {
   .rail,
   .nav-collapse svg,
-  .nav-key,
-  .nav-checks {
+  .nav-key {
     transition: none;
   }
 
-  .nav-checks.running .nav-checks-bar .seg,
   .nav-status.starting,
   .nav-tip {
     animation: none;

@@ -491,7 +491,6 @@ export function App() {
         onToggleAssistant={() => setAssistantOpen((open) => !open)}
         onSwitchProject={() => void switchProject()}
         issues={issues}
-        checks={rows}
         checksRunning={running}
         plotRuns={evidence.filter((run) => run.datasets?.length).length}
         agentState={project.agent.state}
