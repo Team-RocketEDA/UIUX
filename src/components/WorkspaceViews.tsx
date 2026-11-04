@@ -1,7 +1,9 @@
+import { CoverageMap, TargetGauges, TrendCharts, VerifyFlow } from "./VerificationVisuals";
 import { viewUrl, visualFiles } from "./DiagramsView";
 import { Fragment, useEffect, useState } from "react";
 import { parseDocument } from "yaml";
 import { api, checkRows, formatNumber, targetText, timeAgo, type CheckRow, type Commit, type Constraints, type Evidence, type ProjectSummary } from "../api";
+import type { FileEntry } from "../api";
 import { toolNeeds, type EngineToolEntry } from "./TopBar";
 import type { SurfaceId } from "../types";
 import { downloadText } from "../utils";
@@ -319,8 +321,8 @@ function draftOf(c: Constraints): ConstraintsDraft {
   return {
     pdk: c.pdk ?? "none",
     domains: c.domains ?? [],
-    mode: c.agent?.mode === "auto" ? "auto" : "approval",
-    limit: String(c.agent?.iteration_limit ?? 3),
+    mode: c.agent?.mode === "approval" ? "approval" : "auto",
+    limit: String(c.agent?.iteration_limit ?? 10),
     checks: (c.checks ?? []).map((check) => ({ comparison: check.comparison, value: String(check.value), required: check.required !== false })),
   };
 }
@@ -446,13 +448,13 @@ export function ConstraintsView({
             <span>Autonomy</span>
             <div className="segmented" role="radiogroup" aria-label="Autonomy">
               <button role="radio" aria-checked={draft.mode === "approval"} className={draft.mode === "approval" ? "active" : ""} onClick={() => set({ mode: "approval" })}>
-                Approval
+                Ask first
               </button>
               <button role="radio" aria-checked={draft.mode === "auto"} className={draft.mode === "auto" ? "active" : ""} onClick={() => set({ mode: "auto" })}>
-                Automatic repair
+                Build until done
               </button>
             </div>
-            <small>{draft.mode === "auto" ? "The assistant applies design edits without asking." : "You approve every design edit before it is written."}</small>
+            <small>{draft.mode === "auto" ? "The assistant builds and repairs without asking. Only changing targets that are already set needs you." : "You approve every design edit before it is written."}</small>
           </div>
           <label className="field">
             <span>Maximum repair iterations</span>
@@ -528,11 +530,13 @@ type Filter = "all" | "passed" | "failed" | "not-run";
 export function ChecksView({
   project,
   evidence,
+  entries,
+  onAsk,
   running,
   onRunChecks,
   onExportReport,
   onOpenFile,
-}: Common & { running: boolean; onRunChecks: () => void; onExportReport: () => void; onOpenFile: (path: string) => void }) {
+}: Common & { entries: FileEntry[]; onAsk: (text: string) => void; running: boolean; onRunChecks: () => void; onExportReport: () => void; onOpenFile: (path: string) => void }) {
   const rows = checkRows(project.constraints, evidence, project.revision);
   const [filter, setFilter] = useState<Filter>("all");
   const [openRun, setOpenRun] = useState<string>();
@@ -590,6 +594,10 @@ export function ChecksView({
           <b>{limit ? `${limit} repair runs` : "—"}</b>
         </div>
       </div>
+      <VerifyFlow constraints={project.constraints} latest={evidence[0]} />
+      <TargetGauges rows={rows} />
+      <TrendCharts constraints={project.constraints} evidence={evidence} />
+      <CoverageMap entries={entries} evidence={evidence} revision={project.revision} onAsk={onAsk} />
       <div className="panel">
         <div className="panel-heading">
           <span className="eyebrow">Checks at {project.revision || "—"}</span>

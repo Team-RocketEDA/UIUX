@@ -1,0 +1,12 @@
+PASS @6000: count=0
+PASS @16000: count=0
+PASS @26000: count=1
+PASS @36000: count=2
+PASS @46000: count=3
+PASS @56000: count=3
+PASS @66000: count=4
+PASS @76000: count=0
+PASS @86000: count=1
+PASS @2656000: count=0
+ALL TESTS PASSED
+/home/alan/Documents/rocketide/RocketIDE/projects/an-8-bit-counter-with/tests/tb_counter8.v:76: $finish called at 2656000 (1ps)

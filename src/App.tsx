@@ -513,7 +513,7 @@ export function App() {
         );
       case "verification":
         return (
-          <ChecksView project={project} evidence={evidence} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport}
+          <ChecksView project={project} evidence={evidence} entries={entries} onAsk={(text) => { openAssistant(); setDraft({ text, id: Date.now() }); }} running={running} onRunChecks={() => void runChecks()} onExportReport={exportReport}
             onOpenFile={(path) => void openFile(path)} />
         );
       case "live":
