@@ -625,7 +625,18 @@ kbd {
   display: none;
 }
 
+@keyframes explorer-in {
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .explorer {
+    animation: none;
+  }
+
   .rail,
   .nav-collapse svg,
   .nav-key {
@@ -642,6 +653,7 @@ kbd {
   display: flex;
   flex: 0 0 auto;
   flex-direction: column;
+  animation: explorer-in 0.16s ease-out;
   min-width: 180px;
   background: var(--surface);
 }
