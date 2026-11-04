@@ -8,6 +8,7 @@ import { applyUnifiedDiff, describeChanges, type CircuitChange, type Proposal } 
 import { useAgent } from "../agent/useAgent";
 import type { SurfaceId } from "../types";
 import { Icon, type IconName } from "./icons";
+import { LastModelCall, ModelCallList, useModelCalls } from "./ModelCalls";
 import { ModelKeyForm, useModelKey } from "./ModelKey";
 
 const shortPath = (value: string) =>
@@ -237,6 +238,13 @@ function suggestions(constraints: Constraints): Suggestion[] {
   ];
 }
 
+const LESSON_SUGGESTIONS: { icon: IconName; text: string }[] = [
+  { icon: "bulb", text: "Start this lesson with me" },
+  { icon: "sliders", text: "Explain what the checks are asking for" },
+  { icon: "warning", text: "Run the checks and help me understand the result" },
+  { icon: "sparkles", text: "Give me a hint, but not the answer" },
+];
+
 const LEARN_SUGGESTIONS: { icon: IconName; text: string }[] = [
   { icon: "bulb", text: "Walk me through this design, block by block" },
   { icon: "sliders", text: "Explain what each check measures and why it matters" },
@@ -248,6 +256,7 @@ export function AssistantPanel({
   width,
   onClose,
   constraints,
+  lesson,
   agentState,
   onOpenFile,
   onNavigate,
@@ -258,6 +267,7 @@ export function AssistantPanel({
   width: number;
   onClose: () => void;
   constraints: Constraints;
+  lesson?: boolean;
   agentState: string;
   onOpenFile: (path: string) => void;
   onNavigate: (surface: SurfaceId) => void;
@@ -272,10 +282,13 @@ export function AssistantPanel({
   const [tab, setTab] = useState<"chat" | "activity" | "settings">("chat");
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const modelKey = useModelKey();
+  const modelCalls = useModelCalls(replay);
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Attachment[]>([]);
   const [notice, setNotice] = useState<string>();
+  // A lesson always opens in Learn mode.
   const [learn, setLearn] = useState(() => {
+    if (lesson) return true;
     try {
       return localStorage.getItem("rocketide.learn") === "1";
     } catch {
@@ -375,6 +388,7 @@ export function AssistantPanel({
         ))}
       </div>
 
+      {tab === "activity" && <ModelCallList calls={modelCalls} />}
       {tab === "activity" && <ActivityView view={view} onOpenFile={onOpenFile} onShowChat={() => setTab("chat")} />}
       {tab === "settings" && !replay && (
         <div className="assistant-key">
@@ -402,7 +416,7 @@ export function AssistantPanel({
           </div>
         )}
         {!replay && modelKey.status && !modelKey.status.configured && <ModelKeyForm status={modelKey.status} onChange={modelKey.setStatus} />}
-        {error && <div className="notice error">{error}</div>}
+        {error && <div className="notice error">{/\b401\b|unauthorized|invalid api key|bad key/i.test(error) ? "Meta's API refused your key. Replace it under Settings." : error}</div>}
         {view.retry && !replay && (
           <div className="notice warn">
             The model isn't answering: {view.retry.message}.{" "}
@@ -414,9 +428,15 @@ export function AssistantPanel({
 
         {timeline.length === 0 && !replay ? (
           <div className="assistant-empty">
-            <h2>{(constraints.checks ?? []).length ? "Design, check, or fix this project" : "What do you want to build?"}</h2>
+            <h2>{lesson ? constraints.title : (constraints.checks ?? []).length ? "Design, check, or fix this project" : "What do you want to build?"}</h2>
+            {lesson && (
+              <button className="btn lesson-open" onClick={() => onOpenFile("LESSON.md")}>
+                <Icon name="file" size={13} />
+                Read the lesson
+              </button>
+            )}
             <div className="suggestion-grid">
-              {(learn ? LEARN_SUGGESTIONS : suggestions(constraints)).map((item) => (
+              {(lesson ? LESSON_SUGGESTIONS : learn ? LEARN_SUGGESTIONS : suggestions(constraints)).map((item) => (
                 <button key={item.text} className="suggestion" onClick={() => send(item.text)} disabled={!ready || busy}>
                   <span className="suggestion-icon">
                     <Icon name={item.icon} size={14} />
@@ -426,7 +446,7 @@ export function AssistantPanel({
                 </button>
               ))}
             </div>
-            {!replay && (
+            {!replay && !lesson && (
               <button
                 className="suggestion sketch"
                 disabled={!ready || busy}
@@ -583,6 +603,7 @@ export function AssistantPanel({
           }
           aria-label="Message the assistant"
         />
+        <LastModelCall calls={modelCalls} />
         {!replay && (
           <div className="composer-tools">
             <button className="tool-button" onClick={() => fileRef.current?.click()} disabled={!ready} title="Attach a photo, screenshot or PDF. You can also paste or drop one.">

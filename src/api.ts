@@ -18,7 +18,8 @@ export type ModelKeyStatus = { configured: boolean; source: "saved" | "env" | nu
 export type EngineTool = { name: string; available: boolean; missing: string[]; remedy?: string };
 export type JobKind = { operation: string; readiness: string; reason?: string; tools: EngineTool[] };
 
-export type Template = { id: string; title: string; description: string };
+export type Template = { id: string; title: string; description: string; lesson?: boolean };
+export type ModelCall = { at: string; model: string | null; status: number; tokensIn: number | null; tokensOut: number | null; seconds: number; requestId: string | null };
 export type ProjectEntry = { name: string; title: string; description: string; modified: number };
 
 export type ConstraintCheck = {
@@ -50,6 +51,7 @@ export type ProjectSummary = {
   revision: string;
   dirty: boolean;
   constraints: Constraints;
+  lesson?: boolean;
   agent: { state: "starting" | "ready" | "error" | "stopped"; error?: string };
 };
 
@@ -89,6 +91,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
 
 export const api = {
   status: () => request<WorkspaceStatus>("GET", "/api/status"),
+  modelCalls: () => request<ModelCall[]>("GET", "/api/model-calls"),
   modelKey: () => request<ModelKeyStatus>("GET", "/api/model-key"),
   saveModelKey: (key: string) => request<ModelKeyStatus>("PUT", "/api/model-key", { key }),
   removeModelKey: () => request<ModelKeyStatus>("DELETE", "/api/model-key"),

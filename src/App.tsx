@@ -645,6 +645,7 @@ export function App() {
             width={assistantWidth}
             onClose={() => setAssistantOpen(false)}
             constraints={project.constraints}
+            lesson={project.lesson}
             agentState={project.agent.state}
             onOpenFile={(path) => void openFile(path)}
             onNavigate={navigate}

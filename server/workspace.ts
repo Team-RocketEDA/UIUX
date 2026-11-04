@@ -11,6 +11,7 @@ import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { checkKey, cleanKey, credentialsFile, currentKey, keyStatus, removeKey, saveKey } from "./modelKey";
+import { readModelCalls } from "./modelCalls";
 import { segment } from "./segment";
 import { promisify } from "node:util";
 import { parse as parseYaml } from "yaml";
@@ -28,7 +29,7 @@ export type WorkspaceOptions = { fuelHome: string; engineHome: string; projectsD
 type Agent = { port: number; password: string; proc: ChildProcess; state: "starting" | "ready" | "error"; error?: string; edits: AbortController };
 type Open = { name: string; dir: string; agent?: Agent };
 
-const TEMPLATES = ["opamp-engine", "empty"];
+const TEMPLATES = ["lesson-1-rc-filter", "lesson-2-amplifier", "lesson-3-opamp", "opamp-engine", "empty"];
 const NAME_RE = /^[a-z0-9][a-z0-9_-]{0,40}$/;
 const HIDDEN = new Set([".git", ".opencode", ".rocket", "node_modules"]);
 // Written only by the engine / project service, never edited in the IDE.
@@ -155,6 +156,7 @@ export function createWorkspace(options: WorkspaceOptions) {
   const engineUrl = options.engineUrl?.replace(/\/+$/, "");
   mkdirSync(projectsDir, { recursive: true });
   let current: Open | null = null;
+  const startedAt = new Date().toISOString();
 
   function project(): Open {
     if (!current) throw new HttpError(409, "No project is open.");
@@ -238,6 +240,7 @@ export function createWorkspace(options: WorkspaceOptions) {
       revision,
       dirty,
       constraints: readConstraints(open.dir),
+      lesson: existsSync(path.join(open.dir, "LESSON.md")),
       agent: open.agent ? { state: open.agent.state, error: open.agent.error } : { state: "stopped" },
     };
   }
@@ -346,7 +349,7 @@ export function createWorkspace(options: WorkspaceOptions) {
       case "GET /api/templates":
         return json(res, 200, TEMPLATES.filter((id) => existsSync(path.join(fuelHome, "examples", id))).map((id) => {
           const c = readConstraints(path.join(fuelHome, "examples", id));
-          return { id, title: c.title ?? id, description: c.description ?? "" };
+          return { id, title: c.title ?? id, description: c.description ?? "", lesson: existsSync(path.join(fuelHome, "examples", id, "LESSON.md")) };
         }));
       case "GET /api/projects":
         return json(res, 200, readdirSync(projectsDir, { withFileTypes: true })
@@ -357,6 +360,8 @@ export function createWorkspace(options: WorkspaceOptions) {
             return { name: e.name, title: c.title ?? e.name, description: c.description ?? "", modified: statSync(path.join(dir, "constraints.yaml")).mtimeMs };
           })
           .sort((a, b) => b.modified - a.modified));
+      case "GET /api/model-calls":
+        return json(res, 200, process.env.ROCKET_META_CALL_LOG ? readModelCalls(process.env.ROCKET_META_CALL_LOG, startedAt) : []);
       case "GET /api/model-key":
         return json(res, 200, keyStatus(process.env));
       case "PUT /api/model-key": {
