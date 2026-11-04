@@ -37,6 +37,8 @@ async function startWorkspace(): Promise<string> {
 
 function openWindow(url: string) {
   const window = new BrowserWindow({
+    // The RocketIDE mark, from public/ (copied into dist/ by the build), for the window and the taskbar.
+    icon: path.join(root, "dist", "icon-512.png"),
     width: 1520,
     height: 940,
     minWidth: 1120,

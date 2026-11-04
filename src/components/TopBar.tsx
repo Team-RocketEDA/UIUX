@@ -1,3 +1,4 @@
+import { Logo } from "./Logo";
 import type { JobKind } from "../api";
 import { Icon } from "./icons";
 
@@ -69,7 +70,7 @@ export function TopBar({
   return (
     <header className="topbar">
       <button className="brand" onClick={onSwitchProject} title="Switch project">
-        <span className="brand-mark">R</span>
+        <Logo size={26} />
         <b>RocketEDA</b>
       </button>
       <button className="project-pill" onClick={onSwitchProject} title="Switch project">

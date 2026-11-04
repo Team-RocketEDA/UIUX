@@ -137,15 +137,113 @@ body.resizing {
   font-size: 14px;
 }
 
-.brand-mark {
-  display: grid;
-  width: 26px;
-  height: 26px;
-  place-items: center;
-  border-radius: 7px;
-  background: var(--accent);
-  color: #1a0d09;
-  font-weight: 700;
+/* ---------- the RocketIDE mark (components/Logo.tsx) ---------- */
+.logo {
+  flex: 0 0 auto;
+  display: block;
+  border-radius: 23%;
+}
+
+.logo-launch .logo-tile {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: logo-tile-in 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.25) both;
+}
+
+.logo-launch .logo-rocket {
+  animation: logo-rise 1s 0.2s cubic-bezier(0.2, 0.85, 0.25, 1.15) both;
+}
+
+.logo-launch .logo-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: logo-ignite 0.9s 0.2s ease-out both, logo-flicker 0.16s 1.15s ease-in-out infinite alternate;
+}
+
+.logo-launch .logo-window {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: logo-pop 0.35s 1.05s cubic-bezier(0.3, 1.6, 0.5, 1) both;
+}
+
+.logo-launch .logo-pin {
+  stroke-dasharray: 5;
+  animation: logo-trace 0.3s 1s ease-out both;
+}
+
+.logo-launch .logo-pin:nth-child(2) {
+  animation-delay: 1.08s;
+}
+
+.logo-launch .logo-pin:nth-child(3) {
+  animation-delay: 1.16s;
+}
+
+.logo-launch .logo-pin:nth-child(4) {
+  animation-delay: 1.24s;
+}
+
+.logo-loop .logo-rocket {
+  animation: logo-float 2.6s ease-in-out infinite;
+}
+
+.logo-loop .logo-flame {
+  transform-box: fill-box;
+  transform-origin: 50% 0;
+  animation: logo-flicker 0.16s ease-in-out infinite alternate;
+}
+
+@keyframes logo-tile-in {
+  from {
+    opacity: 0;
+    transform: scale(0.55);
+  }
+}
+
+@keyframes logo-rise {
+  from {
+    transform: translateY(30px);
+  }
+}
+
+@keyframes logo-ignite {
+  0% {
+    transform: scaleY(0);
+  }
+  55% {
+    transform: scaleY(1.6);
+  }
+}
+
+@keyframes logo-flicker {
+  to {
+    opacity: 0.8;
+    transform: scaleY(0.72);
+  }
+}
+
+@keyframes logo-pop {
+  from {
+    transform: scale(0);
+  }
+}
+
+@keyframes logo-trace {
+  from {
+    stroke-dashoffset: 5;
+  }
+}
+
+@keyframes logo-float {
+  50% {
+    transform: translateY(-2.5px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .logo * {
+    animation: none !important;
+  }
 }
 
 .project-pill {
@@ -2045,17 +2143,6 @@ kbd {
   margin-bottom: 30px;
 }
 
-.brand-mark {
-  display: grid;
-  width: 40px;
-  height: 40px;
-  place-items: center;
-  border-radius: 11px;
-  color: #fff;
-  background: var(--accent);
-  font-size: 18px;
-  font-weight: 700;
-}
 
 .picker-header h1 {
   margin: 0;

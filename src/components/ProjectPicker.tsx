@@ -1,3 +1,4 @@
+import { Logo } from "./Logo";
 import { useEffect, useState } from "react";
 import { api, timeAgo, type ProjectEntry, type Template, type WorkspaceStatus } from "../api";
 import { Icon } from "./icons";
@@ -40,7 +41,7 @@ export function ProjectPicker({ onOpen }: { onOpen: (name: string) => void }) {
     <main className="picker-shell">
       <section className="picker">
         <header className="picker-header">
-          <span className="brand-mark">R</span>
+          <Logo size={44} animate="launch" title="RocketIDE" />
           <div>
             <h1>RocketEDA</h1>
             <p>Set your constraints. Describe your chip. Watch it get designed, tested and improved.</p>
