@@ -12,7 +12,7 @@ import { LastModelCall, ModelCallList, useModelCalls } from "./ModelCalls";
 import { ModelKeyForm, useModelKey } from "./ModelKey";
 
 const shortPath = (value: string) =>
-  value.replace(/^.*?\/((?:design|tests|ip|workflows|results)\/.*|[^/]+\.(?:yaml|yml|md|json))$/, "$1");
+  value.replace(/^.*?\/((?:design|tests|src|rtl|docs|scripts|ip|workflows|results)\/.*|[^/]+\.(?:yaml|yml|md|json))$/, "$1");
 
 // One quiet line per tool call: what it touched, and for simulations what the engine measured.
 function stepDetail(step: ToolStep): string {
@@ -257,6 +257,7 @@ export function AssistantPanel({
   onClose,
   constraints,
   lesson,
+  onActivity,
   agentState,
   onOpenFile,
   onNavigate,
@@ -268,6 +269,7 @@ export function AssistantPanel({
   onClose: () => void;
   constraints: Constraints;
   lesson?: boolean;
+  onActivity?: (view: SessionView) => void;
   agentState: string;
   onOpenFile: (path: string) => void;
   onNavigate: (surface: SurfaceId) => void;
@@ -334,9 +336,12 @@ export function AssistantPanel({
 
   const approvals = view.approvals.filter((approval) => approval.status === "pending");
   const busy = view.status === "busy";
-  const limit = view.iteration?.limit ?? constraints.agent?.iteration_limit ?? 3;
+  // The rest of the app follows the work, not every word of the reply.
+  const lastStep = view.steps[view.steps.length - 1];
+  useEffect(() => onActivity?.(view), [view.status, view.steps.length, lastStep?.status, lastStep?.id]);
+  const limit = view.iteration?.limit ?? constraints.agent?.iteration_limit ?? 10;
   const used = view.iteration?.used ?? 0;
-  const autonomy = constraints.agent?.mode === "auto" ? "Auto" : "Approval";
+  const autonomy = constraints.agent?.mode === "approval" ? "Approval" : "Auto";
   const ready = replay || agentState === "ready";
   const live = replay || (agent.connected && ready);
   const error = agent.error ?? view.error;
@@ -401,7 +406,7 @@ export function AssistantPanel({
             ["Connection", replay ? "Replay of a recorded session" : live ? "Connected" : agentState === "starting" ? "Starting" : "Not connected"],
             ["Model", model || "known after the first answer"],
             ["Profile", view.agent ?? (autonomy === "Auto" ? "rocket-auto" : "rocket-approval")],
-            ["Autonomy", autonomy === "Auto" ? "Auto: edits apply without asking" : "Approval: you approve each design edit"],
+            ["Autonomy", autonomy === "Auto" ? "Auto: builds until done without asking" : "Approval: you approve each design edit"],
             ["Repair limit", `${limit} engine runs per session (${used} used)`],
           ]}
           onEditConstraints={() => onOpenFile("constraints.yaml")}
@@ -626,7 +631,7 @@ export function AssistantPanel({
         )}
         <div className="composer-row">
           {model && <span className="pill">{model}</span>}
-          <span className="pill" title={learn ? "The tutor explains and doesn't edit" : "Set in constraints.yaml"}>{learn ? "Learn" : autonomy}</span>
+          <span className="pill" title={learn ? "The tutor explains and doesn't edit" : "Change it on the Constraints page"}>{learn ? "Learn" : autonomy}</span>
           <span className={`composer-meta ${view.iteration?.limitReached ? "limit" : ""}`}>
             {used}/{limit} repairs
           </span>

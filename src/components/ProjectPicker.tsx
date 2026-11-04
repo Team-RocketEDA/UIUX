@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, timeAgo, type ProjectEntry, type Template, type WorkspaceStatus } from "../api";
 import { Icon } from "./icons";
 import { Logo } from "./Logo";
+import { StatusPill } from "./ui";
 
 const RECENT = 6;
 
@@ -18,7 +19,14 @@ function ProjectCard({ project, onOpen }: { project: ProjectEntry; onOpen: () =>
       </span>
       <b>{project.title}</b>
       <span className="home-card-text">{project.description}</span>
-      <small>Edited {timeAgo(new Date(project.modified).toISOString())}</small>
+      <small className="home-card-foot">
+        <span>Edited {timeAgo(new Date(project.modified).toISOString())}</span>
+        {project.lastRun ? (
+          <StatusPill status={project.lastRun === "PASS" ? "passed" : project.lastRun === "FAIL" ? "failed" : "skipped"} label={project.lastRun === "NOT_RUN" ? "NOT RUN" : project.lastRun} />
+        ) : (
+          <span>{project.checks ? `${project.checks} check${project.checks === 1 ? "" : "s"}, not run` : "No checks yet"}</span>
+        )}
+      </small>
     </button>
   );
 }

@@ -199,6 +199,15 @@ export function moduleDiagram(module: VerilogModule, modules: VerilogModule[], {
       }
     }
   }
+  // A module with nothing inside is its own logic: one block between its inputs and outputs, not loose ports.
+  if (!module.instances.length && nodes.length) {
+    const id = `self:${module.name}`;
+    nodes.push({ id, label: "logic", kind: "instance", module: module.name, known: false, layer: 1 });
+    for (const node of nodes) {
+      if (node.kind === "input") wires.set(`${node.id}>${id}`, { from: node.id, to: id, nets: [node.label] });
+      if (node.kind === "output") wires.set(`${id}>${node.id}`, { from: id, to: node.id, nets: [node.label] });
+    }
+  }
   const edges = [...wires.values()];
 
   // Left to right by longest path from the inputs, ignoring wires that loop back.

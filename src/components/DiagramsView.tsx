@@ -29,24 +29,18 @@ const title = (path: string) =>
     .replace(/[-_]+/g, " ")
     .replace(/^\d+\s+/, "");
 
-// Everything in the project that shows the design rather than describes it: a block diagram read from its Verilog, and
-// the pictures and interactive pages it holds, including any the assistant has drawn.
-export function DiagramsView({ entries, onAsk }: { entries: FileEntry[]; onAsk: (text: string) => void }) {
-  const visuals = useMemo(() => visualFiles(entries), [entries]);
-  const [open, setOpen] = useState<string>();
-  const [modules, setModules] = useState<VerilogModule[]>([]);
-  const [reading, setReading] = useState(false);
-  const sources = useMemo(
-    () =>
-      entries
-        .filter((entry) => VERILOG.test(entry.path) && entry.size <= MAX_SOURCE_BYTES && !/(^|\/)(tb|tests?)(\/|_)|_tb\.|(^|\/)\./.test(entry.path))
-        .slice(0, MAX_SOURCES),
-    [entries.map((entry) => `${entry.path}:${entry.modified}`).join("|")],
-  );
+const verilogSources = (entries: FileEntry[]) =>
+  entries
+    .filter((entry) => VERILOG.test(entry.path) && entry.size <= MAX_SOURCE_BYTES && !/(^|\/)(tb|tests?)(\/|_)|_tb\.|(^|\/)\./.test(entry.path))
+    .slice(0, MAX_SOURCES);
 
+// The project's Verilog, read again whenever a source changes.
+export function useVerilogModules(entries: FileEntry[]): VerilogModule[] {
+  const [modules, setModules] = useState<VerilogModule[]>([]);
+  const signature = verilogSources(entries).map((entry) => `${entry.path}:${entry.modified}`).join("|");
   useEffect(() => {
     let cancelled = false;
-    setReading(sources.length > 0);
+    const sources = verilogSources(entries);
     void (async () => {
       const parsed: VerilogModule[] = [];
       for (const source of sources) {
@@ -59,12 +53,22 @@ export function DiagramsView({ entries, onAsk }: { entries: FileEntry[]; onAsk: 
         if (cancelled) return;
       }
       setModules(parsed);
-      setReading(false);
     })();
     return () => {
       cancelled = true;
     };
-  }, [sources]);
+  }, [signature]);
+  return modules;
+}
+
+// Everything in the project that shows the design rather than describes it: a block diagram read from its Verilog, and
+// the pictures and interactive pages it holds, including any the assistant has drawn.
+export function DiagramsView({ entries, onAsk }: { entries: FileEntry[]; onAsk: (text: string) => void }) {
+  const visuals = useMemo(() => visualFiles(entries), [entries]);
+  const [open, setOpen] = useState<string>();
+  const modules = useVerilogModules(entries);
+  const sources = verilogSources(entries);
+  const reading = sources.length > 0 && modules.length === 0;
 
   const empty = !visuals.length && !sources.length;
   return (
@@ -88,7 +92,7 @@ export function DiagramsView({ entries, onAsk }: { entries: FileEntry[]; onAsk: 
         </div>
       )}
       {reading && <p className="muted">Reading the Verilog…</p>}
-      {modules.length > 0 && <BlockDiagram modules={modules} />}
+      {modules.length > 0 && <BlockDiagram modules={modules} onAsk={onAsk} />}
       {visuals.length > 0 && (
         <section className="diagram-gallery" aria-label="Pictures and pages in this project">
           {visuals.map((file) => (

@@ -17,6 +17,7 @@ const GROUPS: { title: string; pages: Page[] }[] = [
   {
     title: "Design",
     pages: [
+      { id: "live", label: "Live build", icon: "pulse" },
       { id: "diagrams", label: "Diagrams", icon: "diagram" },
       { id: "schematic", label: "Schematic", icon: "schematic" },
       { id: "layout", label: "Layout", icon: "layout" },

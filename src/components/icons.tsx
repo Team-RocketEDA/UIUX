@@ -44,6 +44,7 @@ import {
   TreeStructureIcon,
   WarningIcon,
   XIcon,
+  PulseIcon,
   type Icon as PhosphorIcon,
 } from "@phosphor-icons/react";
 
@@ -92,7 +93,8 @@ export type IconName =
   | "code"
   | "sliders"
   | "image"
-  | "diagram";
+  | "diagram"
+  | "pulse";
 
 const ICONS: Record<IconName, PhosphorIcon> = {
   home: HouseIcon,
@@ -140,6 +142,7 @@ const ICONS: Record<IconName, PhosphorIcon> = {
   sliders: SlidersHorizontalIcon,
   image: ImageIcon,
   diagram: TreeStructureIcon,
+  pulse: PulseIcon,
 };
 
 export function Icon({

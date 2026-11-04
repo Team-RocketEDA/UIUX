@@ -140,6 +140,7 @@ export function SchematicView({
   readFile,
   onOpenFile,
   onAsk,
+  onAskAbout,
   proposal,
 }: {
   paths: string[];
@@ -147,6 +148,7 @@ export function SchematicView({
   readFile: (path: string) => Promise<string>;
   onOpenFile: (path: string) => void;
   onAsk: () => void;
+  onAskAbout?: (text: string) => void;
   proposal?: Proposal;
 }) {
   const netlists = useMemo(
@@ -409,7 +411,7 @@ export function SchematicView({
             {hot ? `Net ${hot}` : `Scroll to zoom · drag to pan · hover a wire to trace its net · click a part${layout.devices.some((d) => sheetOf(d.device)) ? " · double-click a SHEET to open it" : ""}`}
           </div>
         </div>
-        <Inspector netlist={netlist} circuit={circuit} placed={device} path={active!} onOpenFile={onOpenFile} onHot={setHot}
+        <Inspector onAskAbout={onAskAbout} netlist={netlist} circuit={circuit} placed={device} path={active!} onOpenFile={onOpenFile} onHot={setHot}
           onOpenSheet={device && sheetOf(device.device) ? () => openSheet(device.device) : undefined} />
       </div>
     );
@@ -468,6 +470,7 @@ export function SchematicView({
 }
 
 function Inspector({
+  onAskAbout,
   netlist,
   circuit,
   placed,
@@ -476,6 +479,7 @@ function Inspector({
   onHot,
   onOpenSheet,
 }: {
+  onAskAbout?: (text: string) => void;
   netlist: Netlist;
   circuit: Circuit;
   placed?: Placed;
@@ -522,6 +526,12 @@ function Inspector({
           <button className="btn primary" onClick={onOpenSheet}>
             <Icon name="schematic" size={13} />
             Open sheet {device.model}
+          </button>
+        )}
+        {onAskAbout && (
+          <button className="btn primary" onClick={() => onAskAbout(`In ${path}, about ${device.name} (${device.text.trim()}): `)}>
+            <Icon name="sparkles" size={13} />
+            Ask about this part
           </button>
         )}
         <button className="btn" onClick={() => onOpenFile(path)}>

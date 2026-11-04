@@ -20,7 +20,7 @@ export type JobKind = { operation: string; readiness: string; reason?: string; t
 
 export type Template = { id: string; title: string; description: string; lesson?: boolean };
 export type ModelCall = { at: string; model: string | null; status: number; tokensIn: number | null; tokensOut: number | null; seconds: number; requestId: string | null };
-export type ProjectEntry = { name: string; title: string; description: string; modified: number };
+export type ProjectEntry = { name: string; title: string; description: string; modified: number; checks?: number; lastRun?: "PASS" | "FAIL" | "NOT_RUN" | "UNSUPPORTED" };
 
 export type ConstraintCheck = {
   id?: string;
