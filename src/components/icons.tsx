@@ -17,6 +17,11 @@ export type IconName =
   | "play"
   | "plus"
   | "sparkles"
+  | "paperclip"
+  | "camera"
+  | "graduation"
+  | "eye"
+  | "search"
   | "settings"
   | "sync"
   | "warning"
@@ -41,6 +46,31 @@ export type IconName =
   | "sliders";
 
 const icons: Record<IconName, ReactNode> = {
+  paperclip: <path d="m13.5 7.500-5.700 5.700a3.300 3.300 0 0 1-4.700-4.700l5.800-5.800a2.200 2.200 0 0 1 3.100 3.100l-5.700 5.700a1.100 1.100 0 0 1-1.600-1.600l5.200-5.200" />,
+  camera: (
+    <>
+      <path d="M2 5.500a1 1 0 0 1 1-1h2.300l1-1.500h3.400l1 1.500H13a1 1 0 0 1 1 1V12a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1z" />
+      <circle cx="8" cy="8.700" r="2.300" />
+    </>
+  ),
+  graduation: (
+    <>
+      <path d="M1.500 6.200 8 3l6.500 3.200L8 9.400z" />
+      <path d="M4.300 7.700v3.100c0 .8 1.700 1.700 3.700 1.700s3.700-.9 3.700-1.700V7.700" />
+    </>
+  ),
+  eye: (
+    <>
+      <path d="M1.500 8S3.800 3.700 8 3.700 14.500 8 14.500 8 12.200 12.300 8 12.300 1.500 8 1.500 8z" />
+      <circle cx="8" cy="8" r="1.900" />
+    </>
+  ),
+  search: (
+    <>
+      <circle cx="7" cy="7" r="4.300" />
+      <path d="m13.500 13.500-3.400-3.400" />
+    </>
+  ),
   home: (
     <>
       <path d="M2.5 7.5 8 2.5l5.5 5" />

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { emptyView, FuelClient, reduce, type SessionView } from "./fuel";
+import { emptyView, FuelClient, reduce, type Attachment, type SessionView } from "./fuel";
 
 export type AgentMode = "live" | "replay";
 
@@ -9,12 +9,22 @@ export type AgentMode = "live" | "replay";
 const builtForReplay = import.meta.env.VITE_ROCKET_AGENT === "replay";
 const client = new FuelClient({ baseUrl: `${window.location.origin}/agent` });
 
+// Who answers: the design agent (on Muse Spark, asking first or not), the tutor (Learn mode, on Muse Spark) or the
+// independent reviewer (Second opinion, on Muse Wonder).
+export type Profile = "auto" | "approval" | "tutor" | "reviewer";
+const PROFILES: Record<Profile, string> = {
+  auto: "rocket-auto",
+  approval: "rocket-approval",
+  tutor: "rocket-tutor",
+  reviewer: "rocket-reviewer",
+};
+
 export type Agent = {
   mode: AgentMode;
   view: SessionView;
   connected: boolean;
   error?: string;
-  send: (text: string, autonomy: "auto" | "approval") => Promise<void>;
+  send: (text: string, profile: Profile, files?: Attachment[]) => Promise<void>;
   approve: (approvalId: string) => Promise<void>;
   reject: (approvalId: string) => Promise<void>;
   stop: () => Promise<void>;
@@ -82,7 +92,7 @@ export function useAgent(): Agent {
     };
   }, []);
 
-  const send = useCallback(async (text: string, autonomy: "auto" | "approval") => {
+  const send = useCallback(async (text: string, profile: Profile, files: Attachment[] = []) => {
     if (replayRef.current) return;
     try {
       setError(undefined);
@@ -90,7 +100,7 @@ export function useAgent(): Agent {
         sessionRef.current = await client.createSession("RocketEDA IDE");
         setView((current) => ({ ...current, sessionId: sessionRef.current }));
       }
-      await client.prompt(sessionRef.current, text, autonomy === "auto" ? "rocket-auto" : "rocket-approval");
+      await client.prompt(sessionRef.current, text, PROFILES[profile], files);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }

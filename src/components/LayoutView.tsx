@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, WheelEvent as ReactWheelEvent } from "react";
+import { canvasPicture, segmentView } from "../agent/attachments";
 import { api } from "../api";
 import { flatten, parseGds, type Flat, type Library } from "../layout/gds";
 import { Icon } from "./icons";
@@ -38,6 +39,10 @@ export function LayoutView({
   const [view, setView] = useState<View>();
   const [pointer, setPointer] = useState<[number, number]>();
   const [notice, setNotice] = useState<string>();
+  const [findText, setFindText] = useState("");
+  const [finding, setFinding] = useState(false);
+  const [findStatus, setFindStatus] = useState<string>();
+  const [found, setFound] = useState<{ boxes: { x1: number; y1: number; x2: number; y2: number }[] }>();
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   const drag = useRef<{ x: number; y: number; view: View } | null>(null);
@@ -65,6 +70,28 @@ export function LayoutView({
   const flat: Flat | undefined = useMemo(() => (library && cell ? flatten(library, cell) : undefined), [library, cell]);
   const colors = useMemo(() => new Map(flat?.layers.map((layer, i) => [layer.id, COLORS[i % COLORS.length]])), [flat]);
   const um = (dbu: number) => (library ? dbu * library.dbuInMeters * 1e6 : dbu);
+
+  // SAM 3.1 looks at the view as drawn. Its boxes come back in the picture's pixels; they're kept in layout
+  // coordinates, so they stay on the shapes when the view moves.
+  async function find() {
+    const canvas = canvasRef.current;
+    const prompt = findText.trim();
+    if (!canvas || !view || !prompt || finding) return;
+    setFinding(true);
+    setFindStatus(undefined);
+    setFound(undefined);
+    try {
+      const { boxes } = await segmentView(canvasPicture(canvas), prompt);
+      const toX = (px: number, w: number) => ((px / w) * size[0] - size[0] / 2) * view.scale + view.cx;
+      const toY = (py: number, h: number) => view.cy - ((py / h) * size[1] - size[1] / 2) * view.scale;
+      setFound({ boxes: boxes.map((b) => ({ x1: toX(b.x1, b.w), y1: toY(b.y1, b.h), x2: toX(b.x2, b.w), y2: toY(b.y2, b.h) })) });
+      setFindStatus(boxes.length ? `${boxes.length} found by SAM 3.1` : "SAM 3.1 found none here");
+    } catch (err) {
+      setFindStatus(err instanceof Error ? err.message : String(err));
+    } finally {
+      setFinding(false);
+    }
+  }
 
   // Track the canvas size.
   useEffect(() => {
@@ -119,6 +146,17 @@ export function LayoutView({
         }
       }
     }
+    // What SAM 3.1 found, in layout coordinates so it stays put when panning and zooming.
+    if (found) {
+      ctx.lineWidth = 2;
+      ctx.strokeStyle = "#ffd3c6";
+      ctx.fillStyle = "rgba(238, 106, 76, 0.28)";
+      for (const box of found.boxes) {
+        const [x, y] = [sx(box.x1), sy(box.y1)];
+        ctx.fillRect(x, y, sx(box.x2) - x, sy(box.y2) - y);
+        ctx.strokeRect(x, y, sx(box.x2) - x, sy(box.y2) - y);
+      }
+    }
     // Labels once there is room to read them.
     if (flat.labels.length < 400) {
       ctx.font = "11px JetBrains Mono, ui-monospace, monospace";
@@ -128,7 +166,7 @@ export function LayoutView({
         ctx.fillText(label.text, sx(label.at[0]) + 3, sy(label.at[1]) - 3);
       }
     }
-  }, [flat, view, size, hidden, colors]);
+  }, [flat, view, size, hidden, colors, found]);
 
   const toWorld = (clientX: number, clientY: number): [number, number] | undefined => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -262,6 +300,38 @@ export function LayoutView({
               aria-label={`Layout of ${cell}`}
               role="img"
             />
+            <form
+              className="layout-find"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void find();
+              }}
+            >
+              <Icon name="search" size={13} />
+              <input
+                value={findText}
+                onChange={(event) => setFindText(event.target.value)}
+                placeholder="Find in layout: power rails…"
+                aria-label="Find in layout with SAM 3.1"
+                title="SAM 3.1 looks at this view and marks what you name"
+              />
+              {finding ? (
+                <span className="layout-find-status">Looking…</span>
+              ) : findStatus ? (
+                <>
+                  <span className="layout-find-status">{findStatus}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setFound(undefined);
+                      setFindStatus(undefined);
+                    }}
+                  >
+                    Clear
+                  </button>
+                </>
+              ) : null}
+            </form>
             <div className="schematic-hint">
               {pointer ? `x ${um(pointer[0]).toFixed(3)} µm · y ${um(pointer[1]).toFixed(3)} µm` : "Scroll to zoom · drag to pan"}
             </div>
