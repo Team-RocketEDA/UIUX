@@ -33,8 +33,10 @@ Everything on screen is real; there is no sample data.
   checks; another installed tool hands the assistant a request to review; a missing one says what it needs.
 - **Assistant:** the project's own agent (opencode + Rocket Fuel), started when the project opens. It builds until done
   by default, or asks first if the project says so. Attach a photo or PDF, or show it the view on screen. Learn mode and
-  Second opinion switch who answers. Activity lists tool calls, checks, changed files and every Meta Model API call. Add
-  your Meta API key here: it's kept in a private file and never comes back to the browser.
+  Second opinion switch who answers. Activity lists tool calls, checks, changed files and every model API call, with its
+  provider, model, status, tokens and duration. **Settings → Model provider** lets you choose a provider, model ID,
+  optional base URL and key, test the connection, switch, or remove the saved key. The key is kept in a private file and
+  never comes back to the browser.
 - **Overview:** status, next actions read off the checks, recent commits and engine runs, the engine tool registry.
 - **Export:** project archive (`.tar.gz`) and a markdown verification report.
 - **Schematic:** drawn automatically from the project's SPICE netlists (`design/`, `tests/`): PMOS on top, NMOS
@@ -60,7 +62,7 @@ Clone the repos side by side, then:
 
 ```bash
 # rocket_fuel: the agent (pinned opencode)
-cd rocket_fuel && npm install && cp .env.example .env    # set ROCKET_MODEL / MODEL_API_KEY in .env
+cd rocket_fuel && npm install && cp .env.example .env    # ROCKET_MODEL defaults to Meta/Muse Spark; add its key
 
 # rocket-engine: the branch with the MCP server, plus ngspice on PATH
 cd rocket-engine && git checkout GREEN-the-tests && uv sync

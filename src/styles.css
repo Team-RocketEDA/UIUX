@@ -3622,7 +3622,7 @@ button.activity-row:hover {
   color: #a8a39c;
 }
 
-/* Your Meta Model API key */
+/* Model provider and key */
 .assistant-key {
   padding: 12px 14px 0;
 }
@@ -3667,8 +3667,44 @@ button.activity-row:hover {
   font-family: "JetBrains Mono", ui-monospace, monospace;
   font-size: 12px;
 }
+.model-key label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.model-key label > span,
+.provider-roles summary {
+  color: #a8a39c;
+  font-size: 11px;
+}
+.provider-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  width: 100%;
+}
+.provider-grid input,
+.provider-grid select,
+.model-key select,
+.provider-roles input {
+  width: 100%;
+}
+.model-key form {
+  flex-direction: column;
+}
+.provider-roles {
+  width: 100%;
+  margin-top: 3px;
+}
+.provider-roles input {
+  margin-top: 5px;
+}
+.provider-roles p {
+  margin: 5px 0;
+}
 .model-key-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
   margin-top: 9px;
 }

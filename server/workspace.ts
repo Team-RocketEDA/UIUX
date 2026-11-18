@@ -10,7 +10,9 @@ import http, { type IncomingMessage, type ServerResponse } from "node:http";
 import net from "node:net";
 import os from "node:os";
 import path from "node:path";
-import { checkKey, cleanKey, credentialsFile, currentKey, keyStatus, removeKey, saveKey } from "./modelKey";
+import { cleanKey, credentialsFile, currentKey, keyStatus, removeProviderKey, saveProviderKey } from "./modelKey";
+import { callLogFile, effectiveModelConfig, modelConfigFile, modelEnv, NATIVE_PROVIDERS, saveModelConfig, ConfigError, type EffectiveModelConfig } from "./modelConfig";
+import { testConnection } from "./providerTest";
 import { readModelCalls } from "./modelCalls";
 import { segment } from "./segment";
 import { previewFile, projectSlug, VIEW_TYPES } from "./visuals";
@@ -186,7 +188,31 @@ export function createWorkspace(options: WorkspaceOptions) {
   async function startAgent(open: Open) {
     const port = await freePort();
     const password = randomBytes(18).toString("base64url");
-    const env: NodeJS.ProcessEnv = { ...process.env, OPENCODE_SERVER_PASSWORD: password, MODEL_API_KEY: currentKey(process.env) };
+    let model: EffectiveModelConfig;
+    try {
+      model = effectiveModelConfig(process.env);
+    } catch (error: any) {
+      // A bad saved configuration must not leave the assistant silently starting forever.
+      open.agent = {
+        port, password, state: "error", error: error?.message ?? String(error),
+        proc: { pid: 0, kill: () => true } as any, edits: new AbortController(),
+      };
+      return;
+    }
+    const key = currentKey(process.env, credentialsFile(process.env), model.providerId);
+    const roleKeys: Record<string, string> = {};
+    for (const ref of [model.smallModel, model.tutorModel, model.reviewerModel]) {
+      const provider = ref.slice(0, Math.max(0, ref.indexOf("/")));
+      if (provider && provider !== model.providerId && !roleKeys[provider]) {
+        roleKeys[provider] = currentKey(process.env, credentialsFile(process.env), provider);
+      }
+    }
+    // The keys are injected into this process only; they never go into project config or the browser.
+    const env: NodeJS.ProcessEnv = {
+      ...process.env,
+      OPENCODE_SERVER_PASSWORD: password,
+      ...modelEnv(model, key, roleKeys),
+    };
     if (existsSync(engineHome)) env.ROCKET_ENGINE_HOME = engineHome;
     const proc = spawn(path.join(fuelHome, "scripts", "dev.sh"), [open.dir, "serve", "--port", String(port), "--hostname", "127.0.0.1"], {
       env,
@@ -362,33 +388,117 @@ export function createWorkspace(options: WorkspaceOptions) {
           })
           .sort((a, b) => b.modified - a.modified));
       case "GET /api/model-calls":
-        return json(res, 200, process.env.ROCKET_META_CALL_LOG ? readModelCalls(process.env.ROCKET_META_CALL_LOG, startedAt) : []);
-      case "GET /api/model-key":
-        return json(res, 200, keyStatus(process.env));
-      case "PUT /api/model-key": {
-        let key: string;
-        let verified: boolean;
+        return json(res, 200, readModelCalls(callLogFile(process.env), startedAt));
+      case "GET /api/model-config": {
+        const config = effectiveModelConfig(process.env);
+        return json(res, 200, {
+          ...config,
+          key: keyStatus(process.env, credentialsFile(process.env), config.providerId),
+          providers: NATIVE_PROVIDERS,
+        });
+      }
+      case "PUT /api/model-config": {
+        const body = await readBody(req);
+        const file = modelConfigFile(process.env);
+        let key = "";
         try {
-          key = cleanKey((await readBody(req)).key);
-          ({ verified } = await checkKey(key, process.env));
+          if (body.api_key) key = cleanKey(body.api_key);
+          const probeEnv: NodeJS.ProcessEnv = {
+            ...process.env,
+            ROCKET_MODEL: `${body.provider_id}/${body.model_id}`,
+            ROCKET_PROVIDER_TYPE: body.provider_type || "",
+            ROCKET_PROVIDER_NAME: body.provider_name || "",
+            ROCKET_BASE_URL: body.base_url || "",
+          };
+          for (const [name, field] of [["ROCKET_SMALL_MODEL", "small_model"], ["ROCKET_TUTOR_MODEL", "tutor_model"], ["ROCKET_REVIEWER_MODEL", "reviewer_model"]] as const) {
+            if (body[field]) probeEnv[name] = body[field];
+          }
+          const probe = effectiveModelConfig(probeEnv, file);
+          let verified = false;
+          let test: Awaited<ReturnType<typeof testConnection>> | undefined;
+          if (key || currentKey(process.env, credentialsFile(process.env), probe.providerId)) {
+            test = await testConnection(probe, key || currentKey(process.env, credentialsFile(process.env), probe.providerId), { fuelHome });
+            verified = test.ok;
+            if (!test.ok && ["auth", "model", "endpoint", "protocol", "rate_limit"].includes(test.category)) {
+              throw new HttpError(400, test.message);
+            }
+          }
+          const { api_key: _ignored, ...settings } = body;
+          const saved = saveModelConfig(file, settings);
+          // Credentials live in their own private file; `file` above is the non-secret model configuration.
+          if (key) saveProviderKey(credentialsFile(process.env), saved.providerId, key);
+          restartAgent();
+          return json(res, 200, {
+            ...saved,
+            providers: NATIVE_PROVIDERS,
+            key: keyStatus({ ...process.env, ROCKET_MODEL: saved.modelRef }, credentialsFile(process.env), saved.providerId),
+            verified,
+            test,
+          });
+        } catch (error: any) {
+          throw error instanceof HttpError || error instanceof ConfigError
+            ? (error instanceof ConfigError ? new HttpError(400, error.message) : error)
+            : new HttpError(400, error?.message ?? String(error));
+        }
+      }
+      case "POST /api/model-config/test": {
+        const body = await readBody(req);
+        try {
+          const probeEnv: NodeJS.ProcessEnv = body.provider_id && body.model_id ? {
+            ...process.env,
+            ROCKET_MODEL: `${body.provider_id}/${body.model_id}`,
+            ROCKET_PROVIDER_TYPE: body.provider_type || "",
+            ROCKET_BASE_URL: body.base_url || "",
+          } : process.env;
+          const config = effectiveModelConfig(probeEnv, modelConfigFile(process.env));
+          const key = body.api_key ? cleanKey(body.api_key) : currentKey(process.env, credentialsFile(process.env), config.providerId);
+          return json(res, 200, await testConnection(config, key, { fuelHome }));
         } catch (error: any) {
           throw new HttpError(400, error?.message ?? String(error));
         }
-        saveKey(credentialsFile(process.env), key);
-        restartAgent();
-        return json(res, 200, { ...keyStatus(process.env), verified });
       }
-      case "DELETE /api/model-key":
-        removeKey(credentialsFile(process.env));
+      case "DELETE /api/model-config/key": {
+        const provider = url.searchParams.get("provider") || effectiveModelConfig(process.env).providerId;
+        removeProviderKey(credentialsFile(process.env), provider);
         restartAgent();
-        return json(res, 200, keyStatus(process.env));
+        return json(res, 200, keyStatus(process.env, credentialsFile(process.env), provider));
+      }
+      // Older clients and scripts used a Meta-specific key route; it now means "the active provider".
+      case "GET /api/model-key": {
+        const provider = effectiveModelConfig(process.env).providerId;
+        return json(res, 200, keyStatus(process.env, credentialsFile(process.env), provider));
+      }
+      case "PUT /api/model-key": {
+        const body = await readBody(req);
+        try {
+          const key = cleanKey(body.key);
+          const provider = body.provider || effectiveModelConfig(process.env).providerId;
+          const config = effectiveModelConfig(process.env);
+          const test = await testConnection({ ...config, providerId: provider }, key, { fuelHome });
+          if (!test.ok && ["auth", "model", "endpoint", "protocol", "rate_limit"].includes(test.category)) throw new Error(test.message);
+          saveProviderKey(credentialsFile(process.env), provider, key);
+          restartAgent();
+          return json(res, 200, { ...keyStatus({ ...process.env, ROCKET_PROVIDER: provider }, credentialsFile(process.env), provider), verified: test.ok });
+        } catch (error: any) {
+          throw new HttpError(400, error?.message ?? String(error));
+        }
+      }
+      case "DELETE /api/model-key": {
+        const provider = effectiveModelConfig(process.env).providerId;
+        removeProviderKey(credentialsFile(process.env), provider);
+        restartAgent();
+        return json(res, 200, keyStatus(process.env, credentialsFile(process.env), provider));
+      }
       case "POST /api/segment": {
         const { image, prompt } = await readBody(req);
         if (typeof image !== "string" || !image.startsWith("data:image/") || typeof prompt !== "string" || !prompt.trim()) {
           throw new HttpError(400, "Send a picture and what to find in it.");
         }
         try {
-          return json(res, 200, await segment(image, prompt, { ...process.env, MODEL_API_KEY: currentKey(process.env) }));
+          // SAM 3.1 is a Meta-only optional capability. It uses the Meta credential even when the agent runs
+          // on another provider, so switching the design model never breaks Find in layout.
+          const metaKey = currentKey(process.env, credentialsFile(process.env), "meta");
+          return json(res, 200, await segment(image, prompt, { ...process.env, MODEL_API_KEY: metaKey }));
         } catch (error: any) {
           throw new HttpError(502, error?.message ?? String(error));
         }

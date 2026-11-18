@@ -4,10 +4,13 @@ import { parseNetlist, showValue, type Device, type Netlist } from "./netlist.ts
 
 // Apply a unified diff to the current text. Undefined when a hunk doesn't match (the file moved on).
 export function applyUnifiedDiff(original: string, diff: string): string | undefined {
-  const lines = original.split("\n");
+  // A diff pasted from git may use either line ending, and a JavaScript template literal always hands us LF.
+  // Compare the two in the same form, then restore the file's own ending.
+  const eol = original.includes("\r\n") ? "\r\n" : "\n";
+  const lines = original.replace(/\r\n?/g, "\n").split("\n");
   const hunks: { start: number; before: string[]; after: string[] }[] = [];
   let hunk: (typeof hunks)[number] | undefined;
-  for (const line of diff.split("\n")) {
+  for (const line of diff.replace(/\r\n?/g, "\n").split("\n")) {
     const header = line.match(/^@@ -(\d+)(?:,\d+)? \+\d+(?:,\d+)? @@/);
     if (header) {
       hunk = { start: Number(header[1]) - 1, before: [], after: [] };
@@ -36,7 +39,7 @@ export function applyUnifiedDiff(original: string, diff: string): string | undef
     lines.splice(at, before.length, ...after);
     offset += after.length - before.length;
   }
-  return lines.join("\n");
+  return lines.join("\n").replace(/\n/g, eol);
 }
 
 function findBlock(lines: string[], block: string[], hint: number) {
