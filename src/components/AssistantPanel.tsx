@@ -9,7 +9,7 @@ import { useAgent } from "../agent/useAgent";
 import type { SurfaceId } from "../types";
 import { Icon, type IconName } from "./icons";
 import { LastModelCall, ModelCallList, useModelCalls } from "./ModelCalls";
-import { ModelKeyForm, useModelKey } from "./ModelKey";
+import { ProviderSettings, useModelConfig } from "./ProviderSettings";
 
 const shortPath = (value: string) =>
   value.replace(/^.*?\/((?:design|tests|src|rtl|docs|scripts|ip|workflows|results)\/.*|[^/]+\.(?:yaml|yml|md|json))$/, "$1");
@@ -283,7 +283,7 @@ export function AssistantPanel({
   const [input, setInput] = useState("");
   const [tab, setTab] = useState<"chat" | "activity" | "settings">("chat");
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const modelKey = useModelKey();
+  const modelConfig = useModelConfig();
   const modelCalls = useModelCalls(replay);
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<Attachment[]>([]);
@@ -397,14 +397,15 @@ export function AssistantPanel({
       {tab === "activity" && <ActivityView view={view} onOpenFile={onOpenFile} onShowChat={() => setTab("chat")} />}
       {tab === "settings" && !replay && (
         <div className="assistant-key">
-          <ModelKeyForm status={modelKey.status} onChange={modelKey.setStatus} />
+          <ProviderSettings config={modelConfig.config} onChange={modelConfig.setConfig} />
         </div>
       )}
       {tab === "settings" && (
         <SettingsView
           rows={[
             ["Connection", replay ? "Replay of a recorded session" : live ? "Connected" : agentState === "starting" ? "Starting" : "Not connected"],
-            ["Model", model || "known after the first answer"],
+            ["Provider", modelConfig.config ? `${modelConfig.config.providerName} (${modelConfig.config.providerType})` : "loading…"],
+            ["Model", model || modelConfig.config?.modelRef || "known after the first answer"],
             ["Profile", view.agent ?? (autonomy === "Auto" ? "rocket-auto" : "rocket-approval")],
             ["Autonomy", autonomy === "Auto" ? "Auto: builds until done without asking" : "Approval: you approve each design edit"],
             ["Repair limit", `${limit} engine runs per session (${used} used)`],
@@ -420,8 +421,13 @@ export function AssistantPanel({
             Replay of a recorded session{view.replay?.recordedAt ? ` from ${new Date(view.replay.recordedAt).toLocaleString()}` : ""}. Nothing here is running now.
           </div>
         )}
-        {!replay && modelKey.status && !modelKey.status.configured && <ModelKeyForm status={modelKey.status} onChange={modelKey.setStatus} />}
-        {error && <div className="notice error">{/\b401\b|unauthorized|invalid api key|bad key/i.test(error) ? "Meta's API refused your key. Replace it under Settings." : error}</div>}
+        {!replay && modelConfig.config && !modelConfig.config.key.configured && (
+          <div className="notice warn">
+            No API key is configured for {modelConfig.config.providerName}. Add one under Settings. The IDE and engine
+            checks work without it.
+          </div>
+        )}
+        {error && <div className="notice error">{/\b401\b|unauthorized|invalid api key|bad key/i.test(error) ? "Your provider refused the API key. Replace it under Settings." : error}</div>}
         {view.retry && !replay && (
           <div className="notice warn">
             The model isn't answering: {view.retry.message}.{" "}
@@ -487,10 +493,10 @@ export function AssistantPanel({
                   </div>
                 ) : (
                   <div className="msg agent markdown" key={item.message.id}>
-                    {item.message.model?.startsWith("muse-wonder") && (
+                    {(view.agent === "rocket-reviewer" || item.message.model?.startsWith("muse-wonder")) && (
                       <div className="msg-author">
                         <Icon name="eye" size={12} />
-                        Muse Wonder · independent review
+                        Independent review
                       </div>
                     )}
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>{item.message.text}</ReactMarkdown>
@@ -615,7 +621,7 @@ export function AssistantPanel({
               <Icon name="paperclip" size={13} />
               Attach
             </button>
-            <button className="tool-button" onClick={() => void addView()} disabled={!ready} title="Show Muse Spark the layout, plots or schematic you have open">
+            <button className="tool-button" onClick={() => void addView()} disabled={!ready} title="Show the assistant the layout, plots or schematic you have open (if the model accepts images)">
               <Icon name="camera" size={13} />
               This view
             </button>
@@ -623,7 +629,7 @@ export function AssistantPanel({
               <Icon name="graduation" size={13} />
               Learn
             </button>
-            <button className="tool-button" onClick={secondOpinion} disabled={!ready || busy} title="Muse Wonder independently reviews the design and its evidence. It can't edit or change a verdict.">
+            <button className="tool-button" onClick={secondOpinion} disabled={!ready || busy} title="A second model independently reviews the design and its evidence. It can't edit or change a verdict.">
               <Icon name="eye" size={13} />
               Second opinion
             </button>
